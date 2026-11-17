@@ -212,26 +212,26 @@ else
             <label style="display:block;margin-bottom:4px;font-weight:600;">AI Difficulty Level</label>
             <select @bind="_aiDifficultyLevel" @bind:after="SaveAiDifficultyPreference" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;">
                 <option value="0">Easy</option>
-                <option value="1">Moderate-3-ply</option>
+                <option value="1">Moderate</option>
                 <option value="2">Hard</option>
                 <option value="3">Random</option>
             </select>
             <div style="font-size:12px;opacity:0.85;margin-top:4px;">
                 @if (_aiDifficultyLevel == 0)
                 {
-                    <text>Easy: AI makes occasional mistakes for casual play</text>
+                    <text>Easy: AI plays randomly but avoids handing you a corner</text>
                 }
                 else if (_aiDifficultyLevel == 1)
                 {
-                    <text>Moderate-3-ply: AI looks ahead 3 half-moves</text>
+                    <text>Moderate: AI picks the move with the best immediate positional gain</text>
                 }
                 else if (_aiDifficultyLevel == 2)
                 {
-                    <text>Hard: AI plays at maximum difficulty</text>
+                    <text>Hard: AI looks 3 plies ahead with positional evaluation</text>
                 }
                 else
                 {
-                    <text>Random: AI difficulty varies randomly each game</text>
+                    <text>Random: AI picks any legal move at random</text>
                 }
             </div>
         </div>
@@ -638,6 +638,10 @@ else
             if (_cachedUserId.HasValue)
             {
                 _userGroups = await Auth.GetUserGroupsAsync(_cachedUserId.Value);
+                if (_userGroups.Count == 1 && _selectedGroupId == 0)
+                {
+                    _selectedGroupId = _userGroups[0].Id;
+                }
                 await RefreshLoggedInGroupMembers();
                 
                 // Load AI difficulty preference

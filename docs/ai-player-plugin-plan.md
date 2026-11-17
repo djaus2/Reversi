@@ -3,13 +3,13 @@
 **Version:** 1.0  
 **Date:** March 31, 2026  
 **Target Branch:** AI-2nd-player  
-**Status:** Planning Phase
+**Status:** Historical. Written for the earlier Checkers version and superseded by [AI Player Implementation](AI-Player-Implementation.md), which describes the Reversi AI as built.
 
 ---
 
 ## 🎯 Executive Summary
 
-This document outlines a comprehensive plan to implement a self-contained AI player plugin for the Reversi (Checkers) application. The AI will serve as either the first or second player, using sophisticated algorithms to provide challenging gameplay at multiple difficulty levels.
+This document outlines a comprehensive plan to implement a self-contained AI player plugin for the Checkers application this app was forked from. The AI will serve as either the first or second player, using sophisticated algorithms to provide challenging gameplay at multiple difficulty levels.
 
 ## The request
 

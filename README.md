@@ -8,6 +8,28 @@ Rules: standard Reversi/Othello on an 8x8 board. Black moves first. A move place
 one or more lines of opponent discs are bracketed and flipped. If a player has no legal move they
 must pass; the game ends when neither player can move, and the winner holds the most discs.
 
+AI levels:
+
+| Level | Strategy |
+|-------|----------|
+| Random | Any legal move |
+| Easy | Random, but avoids giving you a corner |
+| Moderate | Best immediate positional gain (1-ply) |
+| Hard | 3-ply lookahead with positional evaluation |
+
+See [docs/AI-Player-Implementation.md](docs/AI-Player-Implementation.md) for details and [docs/index.md](docs/index.md) for the rest of the documentation.
+
+## Build and run
+
+Requires the .NET 10 SDK.
+
+```
+dotnet build
+dotnet run --launch-profile http
+```
+
+Then open http://localhost:5146. Seeded users are defined in `auth.json`.
+
 Forked from [djaus2/Drafts](https://github.com/djaus2/Drafts) — a remote 2-player Draughts Blazor service game.
 
 Has been developed through AI-Coding specifications. Copious documentation generated as well.

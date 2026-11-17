@@ -82,9 +82,7 @@ Implementation of text-to-speech (TTS) and speech recognition features for the R
 - Event priority system
 
 ### 3.2 Move Announcements
-- Piece movement coordinates
-- Capture notifications
-- King promotions
+- Disc placement coordinates
 - Game state changes
 - Turn indicators
 

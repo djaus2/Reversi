@@ -221,7 +221,7 @@ else
         {
             <div style="margin:8px 0;padding:10px;background:#e8f5e8;border:1px solid #4caf50;border-radius:6px;">
                 <p style="margin:0;color:#2e7d32;font-weight:600;">🤖 You are playing against AI - Good luck!</p>
-                <p style="margin:4px 0 0 0;color:#666;font-size:13px;">Difficulty: @(_aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate-3-ply", 2 => "Hard", 3 => "Random", _ => "Moderate-3-ply" })</p>
+                <p style="margin:4px 0 0 0;color:#666;font-size:13px;">Difficulty: @(_aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate", 2 => "Hard", 3 => "Random", _ => "Moderate" })</p>
             </div>
         }
       @if (!string.IsNullOrWhiteSpace(GameResultText))
@@ -450,7 +450,7 @@ else
                         You are playing against the AI. Chat and voice features are disabled in AI mode.
                     </div>
                     <div style="font-size:13px;color:#888;">
-                        Difficulty: @(_aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate-3-ply", 2 => "Hard", 3 => "Random", _ => "Moderate-3-ply" })
+                        Difficulty: @(_aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate", 2 => "Hard", 3 => "Random", _ => "Moderate" })
                     </div>
                 </div>
             </div>
@@ -553,7 +553,7 @@ else
     private string _chatOutText = "";
     private bool _isAiMode = false;
     private bool _aiGameLevel = false;
-    private int _aiDifficultyLevel = 1; // 0=Easy, 1=Moderate-3-ply, 2=Hard, 3=Random
+    private int _aiDifficultyLevel = 1; // 0=Easy, 1=Moderate, 2=Hard, 3=Random
     private int _lastChatCount;
     private int _chatDisplayStartIndex;
     private int _lastVoiceSpokenChatIndex;
@@ -1183,7 +1183,7 @@ else
                 
                 if (success)
                 {
-                    var difficultyText = _aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate-3-ply", 2 => "Hard", 3 => "Random", _ => "Moderate-3-ply" };
+                    var difficultyText = _aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate", 2 => "Hard", 3 => "Random", _ => "Moderate" };
                     _message = $"AI ({difficultyText}) placed at {r},{c}";
                 }
                 else

@@ -1,6 +1,8 @@
 # Documentation Index
 
-This folder contains progressive technical documentation for the Reversi/Checkers Blazor Server application.
+This folder contains progressive technical documentation for the Reversi (Othello) Blazor Server application.
+
+> The app was forked from the [Draughts/Checkers](https://github.com/djaus2/Drafts) app. The release notes, working notes and some feature docs were written before the fork and may still mention Checkers, captures or kings. The infrastructure they describe (auth, groups, chat, voice, logging, timeouts) still applies; the game rules are now Reversi.
 
 ## Recommended reading order
 

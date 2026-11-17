@@ -105,7 +105,6 @@ var settings = await _db.Settings.FirstOrDefaultAsync();
 
 // Update Settings
 settings.MaxMoveTimeoutMins = 45;
-settings.EntrapmentMode = false;
 await _db.SaveChangesAsync();
 
 // Create Settings (if not exists)
@@ -115,8 +114,6 @@ var newSettings = new AppSettings
     MaxMoveTimeoutMins = 30,
     ReaperPeriodSeconds = 30,
     LastMoveHighlightColor = "rgba(255,0,0,0.85)",
-    EntrapmentMode = true,
-    MultiJumpGraceSeconds = 1.5,
     GameInitiatorGoesFirst = true
 };
 _db.Settings.Add(newSettings);

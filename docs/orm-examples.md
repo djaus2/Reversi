@@ -313,8 +313,6 @@ public async Task<bool> UpdateSettingsAsync(AppSettings settings)
         existing.MaxMoveTimeoutMins = settings.MaxTimeoutMins;
         existing.ReaperPeriodSeconds = settings.ReaperPeriodSeconds;
         existing.LastMoveHighlightColor = settings.LastMoveHighlightColor;
-        existing.EntrapmentMode = settings.EntrapmentMode;
-        existing.MultiJumpGraceSeconds = settings.MultiJumpGraceSeconds;
         existing.GameInitiatorGoesFirst = settings.GameInitiatorGoesFirst;
     }
     

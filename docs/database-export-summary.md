@@ -63,8 +63,6 @@
 | MaxTimeoutMins | 5 |
 | ReaperPeriodSeconds | 30 |
 | LastMoveHighlightColor | rgba(255,0,0,0.85) |
-| EntrapmentMode | 1 (true) |
-| MultiJumpGraceSeconds | 1.5 |
 | GameInitiatorGoesFirst | 1 (true) |
 
 **Notes:**

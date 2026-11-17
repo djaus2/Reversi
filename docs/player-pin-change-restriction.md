@@ -39,8 +39,6 @@ Settings Section:
 ├── Max game start wait time (mins)
 ├── Max login hours
 ├── Reaper period (seconds)
-├── Entrapment mode
-├── Multi-jump grace period (seconds)
 ├── Game Initiator goes first
 └── Allow players to change their PIN ← NEW SETTING
 ```
