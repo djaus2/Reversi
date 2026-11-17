@@ -1,0 +1,1966 @@
+﻿@page "/Reversi"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Player,Admin")]
+@implements IDisposable
+@using Reversi.Services
+@using Reversi.Components
+@inject ReversiService GameService
+@inject AuthService Auth
+@inject SettingsService Settings
+@inject NavigationManager Nav
+@inject Microsoft.JSInterop.IJSRuntime JS
+@inject IHttpContextAccessor HttpContextAccessor
+@inject AiService AiService
+
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+
+<style>
+  /* Discs sized to 80% of a 48px cell => 38px diameter */
+  .piece-wrapper { display:flex; align-items:center; justify-content:center; height:100%; }
+  .piece {
+    width:38px;
+    height:38px;
+    border-radius:50%;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+    user-select:none;
+    font-weight:700;
+    pointer-events: none;
+  }
+  .p1 { background:radial-gradient(circle at 35% 30%, #555, #111 70%); color:#fff; border:1px solid rgba(0,0,0,0.8); }
+  .p2 { background:radial-gradient(circle at 35% 30%, #fff, #d9d9d9 75%); color:#000; border:1px solid #555; }
+
+  /* Small dot marking a legal placement for the side to move. */
+  .hint-dot {
+    width:14px;
+    height:14px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.45);
+    box-shadow:0 0 0 1px rgba(0,0,0,0.35);
+  }
+
+  /* Marker over discs that were flipped by the last move. */
+  .flipped-marker {
+    position:absolute;
+    inset:4px;
+    border-radius:50%;
+    border:2px dashed var(--lastmove-color, rgba(255,0,0,0.85));
+    pointer-events:none;
+  }
+
+  .funky-heading {
+    margin:0;
+    font-weight:800;
+    letter-spacing:0.5px;
+    font-size:18px;
+    line-height:1.1;
+    color:#6a1b9a;
+    text-shadow:0 1px 0 rgba(0,0,0,0.15);
+  }
+
+  .game-btn {
+    min-width:120px;
+    padding:6px 12px;
+    border-radius:4px;
+    border:1px solid #888;
+    background:#f3f3f3;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:4px;
+  }
+  .game-btn:disabled {
+    opacity:0.5;
+    cursor:not-allowed;
+  }
+
+.game-voice-button {
+    min-width: 120px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: 1px solid #888;
+    --btn-bg: linear-gradient(90deg,
+      #ffffff 0%,
+      #eaffea 20%,
+      #d4f7d4 30%,
+      #bff3bf 50%,
+      #d4f7d4 70%,
+      #eaffea 80%,
+      #ffffff 100%);
+    --btn-bg-opacity: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.game-voice-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+  .gameover-overlay {
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.6);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:9999;
+  }
+
+  .gameover-card {
+    width:min(560px, calc(100vw - 32px));
+    padding:22px 20px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.18);
+    color:#fff;
+    text-align:center;
+    box-shadow: 0 16px 50px rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+  }
+
+  .gameover-winner {
+    background: radial-gradient(circle at 30% 20%, rgba(255,202,40,0.95), rgba(213,0,249,0.6) 45%, rgba(41,121,255,0.35) 70%, rgba(0,0,0,0.65) 100%);
+  }
+
+  .gameover-loser {
+    background: radial-gradient(circle at 30% 20%, rgba(120,120,120,0.95), rgba(40,40,40,0.75) 55%, rgba(0,0,0,0.8) 100%);
+  }
+
+  .gameover-title {
+    font-size:34px;
+    font-weight:900;
+    letter-spacing:0.8px;
+    margin:0 0 6px 0;
+    text-transform:uppercase;
+  }
+
+  .gameover-sub {
+    font-size:16px;
+    margin:0 0 14px 0;
+    opacity:0.95;
+  }
+
+  .gameover-actions {
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    margin-top:14px;
+  }
+
+  .gameover-actions button {
+    border-radius:10px;
+    padding:10px 14px;
+    border:1px solid rgba(255,255,255,0.25);
+    background:rgba(0,0,0,0.28);
+    color:#fff;
+    cursor:pointer;
+  }
+
+  .lastmove-to {
+    box-shadow: inset 0 0 0 3px var(--lastmove-color, rgba(255,0,0,0.85));
+  }
+
+  .captured-x {
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:28px;
+    font-weight:900;
+    color:var(--lastmove-color, rgba(255,0,0,0.85));
+    pointer-events:none;
+    text-shadow:0 1px 3px rgba(0,0,0,0.6);
+  }
+
+  .flipped-x {
+    position:absolute;
+    top:2px;
+    right:4px;
+    font-size:14px;
+    font-weight:900;
+    color:var(--lastmove-color, rgba(255,0,0,0.85));
+    pointer-events:none;
+    text-shadow:0 1px 2px rgba(0,0,0,0.6);
+  }
+</style>
+
+<PageTitleHeading Title="Reversi Game" HeadingLevel="2" />
+
+@if (string.IsNullOrEmpty(_gameId))
+{
+    <div>
+        <button @onclick="CreateGame">Create new game</button>
+        <div style="margin-top:8px;">
+            <input @bind="_joinId" placeholder="Enter Game ID" />
+            <button @onclick="JoinById">Join</button>
+        </div>
+    </div>
+}
+else if (!_connected)
+{
+    <div>
+        <p>Joining game <b>@_gameId</b>…</p>
+        <p>@_status</p>
+    </div>
+}
+else
+{
+    <div style="--lastmove-color:@LastMoveHighlightColor;">
+        <p>Game: <b>@_gameId</b> — You are <b>@ColorName(_playerNumber)</b> (<b>@_currentUserName</b>). Current turn: <b>@ColorName(_game?.CurrentTurn ?? 0)</b></p>
+        <p style="margin:2px 0 8px 0;">⚫ Black: <b>@(_game?.Player1PieceCount ?? 0)</b> &nbsp;—&nbsp; ⚪ White: <b>@(_game?.Player2PieceCount ?? 0)</b></p>
+        @if (_isAiMode)
+        {
+            <div style="margin:8px 0;padding:10px;background:#e8f5e8;border:1px solid #4caf50;border-radius:6px;">
+                <p style="margin:0;color:#2e7d32;font-weight:600;">🤖 You are playing against AI - Good luck!</p>
+                <p style="margin:4px 0 0 0;color:#666;font-size:13px;">Difficulty: @(_aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate-3-ply", 2 => "Hard", 3 => "Random", _ => "Moderate-3-ply" })</p>
+            </div>
+        }
+      @if (!string.IsNullOrWhiteSpace(GameResultText))
+      {
+          <p><b>@GameResultText</b></p>
+      }
+      @*  <p>
+            Share this link with the other player:
+        </p>  *@
+        <div hidden style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+@*             <input style="width:340px" value="@JoinLink" readonly />
+            <button @onclick="CopyJoinLink">Copy</button>
+            <!-- button @onclick="OpenJoinLinkNewWindow" style="display:inline-block;padding:6px 10px;border:1px solid #888;background:#f3f3f3;color:inherit;border-radius:4px;">Open in new window</!-- -->
+ *@            @if (_copied)
+            {
+                <span style="color:green;margin-left:6px;">Copied!</span>
+            }
+        </div>
+
+        @if (_game is not null && _game.CreatedByUserId == _currentUserId && !_game.HadSecondPlayerConnected)
+        {
+            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                <button class="game-btn" @onclick="CancelOrExitGame">@CancelOrExitButtonText</button>
+                <button class="game-btn" @onclick="StartGame" 
+                        style="background:#28a745;color:white;"
+                        title="Start the game">
+                    Start game
+                </button>
+            </div>
+        }
+        @if (_game is not null 
+            && _game.State != ReversiService.GameState.Finished 
+            && _game.State != ReversiService.GameState.Abandoned 
+            && _game.HadSecondPlayerConnected)
+        {
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                <button class="game-btn" @onclick="ShowConcedeConfirm" style="background:#ff6b6b;color:white;">Concede</button>
+            </div>
+        }
+        @if (_game is not null 
+            && _game.State != ReversiService.GameState.Finished 
+            && _game.State != ReversiService.GameState.Abandoned 
+            && _game.HadSecondPlayerConnected)
+        {
+            <div style="margin:6px 0 10px 0;">
+                Idle timeout in: <b>@IdleTimeoutRemainingText</b>
+            </div>
+        }
+        @if (_game is not null 
+            && (_game.State == ReversiService.GameState.Finished || _game.State == ReversiService.GameState.Abandoned)
+            && !_showGameOverOverlay
+            && _gameOverAcknowledged)
+        {
+            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                <button class="game-btn" @onclick="CancelOrExitGame">Exit game</button>
+            </div>
+        }
+        <table style="border-collapse:collapse;">
+            @for (int r = 0; r < 8; r++)
+            {
+                <tr>
+                    @for (int c = 0; c < 8; c++)
+                    {
+                        var rr = r;
+                        var cc = c;
+
+                        var cell = _game is not null ? _game.Board[rr, cc] : 0;
+                        var isLastMoveTo = IsLastMoveTo(rr, cc);
+                        var isHint = cell == 0 && _legalMoves.Contains((rr, cc));
+
+                        var lastMoveToClass = isLastMoveTo ? " lastmove-to" : "";
+
+                        <td data-r="@rr" data-c="@cc"
+                            style="position:relative;width:48px;height:48px;text-align:center;vertical-align:middle;background:#1e7d32;border:1px solid #0b5d1e;cursor:pointer;"
+                            class="@lastMoveToClass"
+                            @onclick="() => OnCellClick(rr, cc)"
+                            @oncontextmenu="(e => OnCellRightClick(e, rr, cc))"
+                            @oncontextmenu:preventDefault="true">
+                            <div class="piece-wrapper">
+                                @if (cell != 0)
+                                {
+                                    var pieceClass = cell == 1 ? "p1" : "p2";
+                                    <div class="piece @pieceClass"></div>
+                                }
+                                else if (isHint)
+                                {
+                                    <div class="hint-dot"></div>
+                                }
+                            </div>
+                            @if (IsLastMoveFlipped(rr, cc))
+                            {
+                                <div class="flipped-x">×</div>
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+        </table>
+
+        @if (!_isAiMode)
+        {
+            <div style="margin-top:10px;width:384px;max-width:calc(100vw - 24px);display:flex;flex-direction:column;gap:8px;">
+                <div class="funky-heading">Chat</div>
+                <textarea @ref="_chatInRef" rows="4" style="width:100%;resize:vertical;min-height:80px;" readonly>@_chatInText</textarea>
+                <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;">
+                    <button class="game-btn" @onclick="ClearChatReceive">Clear Chat</button>
+                    <button class="game-voice-button" @onclick="ToggleHideVoiceInChat" x:Name="btnToggleVoiceChat"
+
+                        title="@(_hideVoiceInChat ? "Voice messages hidden from chat" : "Voice messages shown in chat")">
+                        @if (_hideVoiceInChat)
+                        {
+                            <span style="font-size:18px;">💬</span>
+                            <span>Talk Txt Hidden</span>
+                        }
+                        else
+                        {
+                            <span style="font-size:18px;">👁</span>
+                            <span>Show Talk Txt</span>
+                        }
+                    </button>
+                </div>
+                <div class="funky-heading">Send</div>
+                <textarea @ref="_chatOutRef" rows="4" style="width:100%;resize:vertical;min-height:80px;" placeholder="Type message and press Enter"
+                          @bind-value="_chatOutText" @bind-value:event="oninput"
+                          @onkeydown="OnChatOutKeyDown"
+                          @onkeyup="OnChatOutKeyUp"
+                          ></textarea>
+
+                @if (_game?.HadSecondPlayerConnected == true)
+                {
+                    <div style="margin-top:12px;display:flex;flex-wrap:nowrap;gap:12px;align-items:center;width:100%;max-width:calc(100vw - 24px);">
+                        <button class="game-btn" @onclick="SendChat">Send Txt</button>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <button class="game-voice-button" disabled="@(!CanPressToTalk)" x:Name="btnTalk"
+                                    @onpointerdown="OnTalkPointerDown"
+                                    @onpointerup="OnTalkPointerUp"
+                                    @onpointercancel="OnTalkPointerCancel"
+                                    @onpointerleave="OnTalkPointerLeave"
+                                    @onpointerdown:preventDefault="true"
+                                    @onpointerup:preventDefault="true">
+                                @if (IsVoiceMuted)
+                                {
+                                    <span style="font-size:18px;">🔇</span>
+                                }
+                                else
+                                {
+                                    <span style="font-size:18px;">🔊</span>
+                                }
+                                <span>@TalkButtonText</span>
+                            </button>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <button class="game-voice-button" @onclick="ToggleMute" x:Name = "btnMute"
+                                    disabled="@(IsVoiceMuted && !CanUnmute)"
+                                    title="@MuteButtonTitle">
+                                @if (IsVoiceMuted)
+                                {
+                                    <span style="font-size:18px;">🔇</span>
+                                    <span>Unmute</span>
+                                }
+                                else
+                                {
+                                    <span style="font-size:18px;">🔊</span>
+                                    <span>Mute</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+            @if (IsVoiceMuted && !string.IsNullOrWhiteSpace(_game?.VoiceMutedByUserName))
+            {
+                <span style="font-size:16px;color:red">Muted by @_game.VoiceMutedByUserName</span>
+            }
+            else
+            {
+                <p style="margin-top:8px;">@_message@(!string.IsNullOrWhiteSpace(_voiceStatus) ? (" " + _voiceStatus) : "")@(!string.IsNullOrWhiteSpace(_ttsStatus) ? (" " + _ttsStatus) : "")</p>
+                if (!string.IsNullOrWhiteSpace(_ttsDebug))
+                {
+                    <p style="font-size:16px;color:#888;word-break:break-all;">TTS: @_ttsDebug</p>
+                }
+            }
+
+           /* @if (_game?.HadSecondPlayerConnected == true)
+            {
+                <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;width:384px;max-width:calc(100vw - 24px);">
+                    <button class="game-btn" disabled="@(!CanPressToTalk)"
+                            @onpointerdown="OnTalkPointerDown"
+                            @onpointerup="OnTalkPointerUp"
+                            @onpointercancel="OnTalkPointerCancel"
+                            @onpointerleave="OnTalkPointerLeave"
+                            @onpointerdown:preventDefault="true"
+                            @onpointerup:preventDefault="true">
+                        @TalkButtonText
+                    </button>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        @if (IsVoiceMuted && !string.IsNullOrWhiteSpace(_game?.VoiceMutedByUserName))
+                        {
+                            <span style="font-size:14px;color:#666;">(muted by @_game.VoiceMutedByUserName)</span>
+                        }
+                        <button class="game-btn" @onclick="ToggleMute" 
+                                disabled="@(IsVoiceMuted && !CanUnmute)"
+                                style="background:@(IsVoiceMuted ? "#ffcccc" : "#f3f3f3");"
+                                title="@MuteButtonTitle">
+                            @if (IsVoiceMuted)
+                            {
+                                <span style="font-size:18px;">🔇</span>
+                                <span>Unmute</span>
+                            }
+                            else
+                            {
+                                <span style="font-size:18px;">🔊</span>
+                                <span>Mute</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            }*/
+        }
+        else
+        {
+            <div style="margin-top:10px;width:384px;max-width:calc(100vw - 24px);display:flex;flex-direction:column;gap:8px;">
+                <div class="funky-heading">AI Game Mode</div>
+                <div style="padding:12px;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6;">
+                    <div style="font-size:14px;color:#666;margin-bottom:8px;">
+                        You are playing against the AI. Chat and voice features are disabled in AI mode.
+                    </div>
+                    <div style="font-size:13px;color:#888;">
+                        Difficulty: @(_aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate-3-ply", 2 => "Hard", 3 => "Random", _ => "Moderate-3-ply" })
+                    </div>
+                </div>
+            </div>
+            <p style="margin-top:8px;">@_message</p>
+        }
+    </div>
+}
+
+@if (_showGameOverOverlay)
+{
+    <div class="gameover-overlay" @onclick="DismissGameOverOverlay">
+        <div class="gameover-card @GameOverCardClass" @onclick:stopPropagation="true">
+            <div class="gameover-title">@GameOverTitle</div>
+            <div class="gameover-sub">@GameOverSubtitle</div>
+            <div class="gameover-actions">
+                <button @onclick="DismissGameOverOverlay">@GameOverButtonText</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_game?.State == ReversiService.GameState.Finished && !_showGameOverOverlay && _gameOverAcknowledged)
+{
+    <div style="margin:10px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="game-btn" @onclick="CancelOrExitGame">Close</button>
+    </div>
+}
+
+@if (_showCancelConfirm)
+{
+    <div class="gameover-overlay" @onclick="() => _showCancelConfirm = false">
+        <div class="gameover-card" @onclick:stopPropagation="true">
+            <div class="gameover-title">Cancel game?</div>
+            <div class="gameover-sub">Are you sure you want to cancel this game?</div>
+            <div class="gameover-actions">
+                <button @onclick="() => _showCancelConfirm = false">No</button>
+                <button class="game-btn" @onclick="ConfirmCancelGame">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showConcedeConfirm)
+{
+    <div class="gameover-overlay" @onclick="() => _showConcedeConfirm = false">
+        <div class="gameover-card" @onclick:stopPropagation="true">
+            <div class="gameover-title">Concede game?</div>
+            <div class="gameover-sub">Are you sure you want to concede? You will lose and the other player will win.</div>
+            <div class="gameover-actions">
+                <button @onclick="() => _showConcedeConfirm = false">No</button>
+                <button class="game-btn" @onclick="ConfirmConcede" style="background:#ff6b6b;color:white;">Yes, Concede</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _gameId;
+    private string _joinId = "";
+
+    private const string VoicePrefix = "[VOICE] ";
+    private const string VoiceMetaPrefix = "[VOICE-META]";
+    private bool _talkEnabled;
+    private bool _pttHeld;
+    private string _preferredTtsVoiceKey = "";
+    private string _preferredTtsLanguage = "";
+    private string _preferredTtsRegion = "";
+    private bool _isPhoneClient;
+    private bool _voiceSupported;
+    private bool _voiceSupportChecked;
+    private bool _hideVoiceInChat = true;
+    private string _voiceStatus = "";
+    private string _ttsStatus = "";
+    private int _ttsStatusVersion;
+    private DotNetObjectReference<ReversiGame>? _voiceDotNetRef;
+    private System.Threading.Timer? _voiceHoldRenewTimer;
+
+    private Reversi.Services.ReversiGame? _game;
+    private bool _connected = false;
+    private int _playerNumber;
+    private bool _joined = false;
+    private int _currentUserId;
+    private string _currentUserName = "";
+    private bool _isAdmin;
+
+    private readonly HashSet<(int R, int C)> _legalMoves = new();
+
+    private string _message = "";
+    private string _status = "";
+    private bool _copied = false;
+
+    private bool _showGameOverOverlay;
+    private bool _gameOverAcknowledged;
+
+    private string JoinLink => Nav.BaseUri.TrimEnd('/') + $"/Reversi?gameId={_gameId ?? ""}";
+
+    private ElementReference _chatInRef;
+    private ElementReference _chatOutRef;
+    private string _chatInText = "";
+    private string _chatOutText = "";
+    private bool _isAiMode = false;
+    private bool _aiGameLevel = false;
+    private int _aiDifficultyLevel = 1; // 0=Easy, 1=Moderate-3-ply, 2=Hard, 3=Random
+    private int _lastChatCount;
+    private int _chatDisplayStartIndex;
+    private int _lastVoiceSpokenChatIndex;
+    private bool _chatScrollPending;
+    private string _ttsDebug = "";
+
+    private DotNetObjectReference<ReversiGame>? _dotNetRef;
+    private bool _chatWired;
+
+    private string? _gameClosedReason;
+    private bool _gameEndedWithWinLoss = false; // Track if game ended with proper win/loss
+    private bool _showCancelConfirm = false;
+    private bool _showConcedeConfirm = false;
+    private int? _groupId;
+
+    private ReversiService.GameState? _lastGameState;
+    private int? _lastWinnerPlayer;
+
+    private string GameResultText
+    {
+        get
+        {
+            if (_game is null) return "";
+            if (_game.State != ReversiService.GameState.Finished) return "";
+            if (!_game.WinnerPlayer.HasValue) return "Game over.";
+            if (_game.WinnerPlayer.Value == _playerNumber) return "You WON!";
+            return "You LOST!";
+        }
+    }
+
+    private string GameOverTitle
+    {
+        get
+        {
+            if (_game is null || _game.State != ReversiService.GameState.Finished) return "Game over";
+            if (!_game.WinnerPlayer.HasValue) return "Game over";
+            return _game.WinnerPlayer.Value == _playerNumber ? "Winner!" : "Defeat";
+        }
+    }
+
+    private string GameOverSubtitle
+    {
+        get
+        {
+            if (_game is null || _game.State != ReversiService.GameState.Finished) return "";
+            if (!_game.WinnerPlayer.HasValue) return "";
+            return _game.WinnerPlayer.Value == _playerNumber
+                ? "You WON!"
+                : "You LOST!";
+        }
+    }
+
+    private string GameOverCardClass
+    {
+        get
+        {
+            if (_game is null || _game.State != ReversiService.GameState.Finished) return "";
+            if (!_game.WinnerPlayer.HasValue) return "gameover-loser";
+            return _game.WinnerPlayer.Value == _playerNumber ? "gameover-winner" : "gameover-loser";
+        }
+    }
+
+    private string GameOverButtonText
+    {
+        get
+        {
+            if (_game is null || _game.State != ReversiService.GameState.Finished) return "Close";
+            if (!_game.WinnerPlayer.HasValue) return "Close";
+            // For actual win/loss conclusions, use more celebratory/acknowledging text
+            return _game.WinnerPlayer.Value == _playerNumber ? "Victory!" : "Well Played!";
+        }
+    }
+
+    private int _maxTimeoutMins = 30;
+    private System.Threading.Timer? _uiTimer;
+
+    private string LastMoveHighlightColor
+    {
+        get
+        {
+            var c = Settings.LastMoveHighlightColor;
+            if (string.IsNullOrWhiteSpace(c)) return "rgba(255,0,0,0.85)";
+            return c;
+        }
+    }
+
+    private bool IsVoiceFloorHeldByOther
+    {
+        get
+        {
+            if (_game is null) return false;
+            if (!_game.VoiceFloorUserId.HasValue) return false;
+            if (_game.VoiceFloorUserId.Value == _currentUserId) return false;
+            if (!_game.VoiceFloorUntilUtc.HasValue) return false;
+            return _game.VoiceFloorUntilUtc.Value > DateTime.UtcNow;
+        }
+    }
+
+    private bool IsVoiceFloorHeldByMe
+    {
+        get
+        {
+            if (_game is null) return false;
+            if (!_game.VoiceFloorUserId.HasValue) return false;
+            if (_game.VoiceFloorUserId.Value != _currentUserId) return false;
+            if (!_game.VoiceFloorUntilUtc.HasValue) return false;
+            return _game.VoiceFloorUntilUtc.Value > DateTime.UtcNow;
+        }
+    }
+
+    private bool IsAiDifficultyImplemented
+    {
+        get
+        {
+            // Easy (0): Implemented - avoids moves that can be captured
+            // Random (3): Implemented - completely random
+            // Moderate (1) and Hard (2): Not yet implemented
+            return _aiDifficultyLevel == 0 || _aiDifficultyLevel == 3;
+        }
+    }
+
+    private bool CanPressToTalk => _voiceSupported && _talkEnabled && !_pttHeld && !IsVoiceFloorHeldByOther && !IsVoiceMuted;
+
+    private string TalkButtonText
+    {
+        get
+        {
+            if (!_voiceSupported) return "Talk not supported";
+            if (!_talkEnabled) return "Talk";
+            if (IsVoiceMuted) return "Muted";
+            if (_pttHeld) return "Talking…";
+            if (IsVoiceFloorHeldByOther) return "Other talking…";
+            return "Talk";
+        }
+    }
+
+    private string GetConnectedMessage()
+    {
+        return _voiceSupportChecked && !_voiceSupported ? "Connected. Talk not supported" : "Connected.";
+    }
+
+    private void UpdateVoiceStatusFromGame()
+    {
+        if (!_voiceSupportChecked)
+        {
+            _voiceStatus = "";
+            return;
+        }
+
+        if (!_voiceSupported)
+        {
+            _voiceStatus = "Talk not supported";
+            return;
+        }
+
+        if (!_talkEnabled)
+        {
+            _voiceStatus = "Talk is off";
+            return;
+        }
+
+        if (_pttHeld)
+        {
+            _voiceStatus = "Talking…";
+            return;
+        }
+
+        if (IsVoiceFloorHeldByOther)
+        {
+            var name = _game?.VoiceFloorUserName;
+            _voiceStatus = string.IsNullOrWhiteSpace(name) ? "Other talking…" : $"{name} talking…";
+            return;
+        }
+
+        _voiceStatus = "Hold to talk";
+    }
+
+    private bool IsVoiceMuted => _game?.VoiceMuted ?? false;
+
+    private bool CanUnmute => _game?.VoiceMutedByUserId == _currentUserId;
+
+    private string MuteButtonTitle
+    {
+        get
+        {
+            if (!IsVoiceMuted) return "Mute voice for both players";
+            if (CanUnmute) return "Unmute voice";
+            return $"Muted by {_game?.VoiceMutedByUserName ?? "other player"} - only they can unmute";
+        }
+    }
+
+    private async Task ToggleMute()
+    {
+        if (string.IsNullOrWhiteSpace(_gameId)) return;
+        if (_currentUserId <= 0) return;
+
+        var (ok, msg) = GameService.ToggleVoiceMute(_gameId, _currentUserId, _currentUserName);
+        if (!ok && !string.IsNullOrWhiteSpace(msg))
+        {
+            _message = msg;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleHideVoiceInChat()
+    {
+        _hideVoiceInChat = !_hideVoiceInChat;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Clear any existing game state to ensure fresh start
+        ClearGameState();
+        
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var ctxUser = HttpContextAccessor.HttpContext?.User;
+
+        if (user?.Identity?.IsAuthenticated != true && ctxUser?.Identity?.IsAuthenticated == true)
+        {
+            user = ctxUser;
+        }
+
+        if (user?.Identity?.IsAuthenticated != true)
+        {
+            var relative = Nav.ToBaseRelativePath(Nav.Uri);
+            var cleanPath = relative.StartsWith("/") ? relative : "/" + relative;
+            var returnUrl = Uri.EscapeDataString(cleanPath);
+            Nav.NavigateTo($"/login?returnUrl={returnUrl}", forceLoad: true);
+            return;
+        }
+
+        _isAdmin = user.IsInRole("Admin");
+
+        _currentUserName = user.FindFirst(ClaimTypes.Name)?.Value ?? "";
+
+        var rawUid = user.FindFirst("uid")?.Value;
+        if (!int.TryParse(rawUid, out _currentUserId) || _currentUserId <= 0)
+        {
+            var relative = Nav.ToBaseRelativePath(Nav.Uri);
+            // Ensure no double slash - if relative starts with /, don't add another one
+            var cleanPath = relative.StartsWith("/") ? relative : "/" + relative;
+            var returnUrl = Uri.EscapeDataString(cleanPath);
+            Nav.NavigateTo($"/login?returnUrl={returnUrl}", forceLoad: true);
+            return;
+        }
+
+        try
+        {
+            var pref = await Auth.GetPreferredTtsVoiceAsync(_currentUserId);
+            _preferredTtsVoiceKey = pref ?? "";
+        }
+        catch
+        {
+            _preferredTtsVoiceKey = "";
+        }
+
+        try
+        {
+            var lang = await Auth.GetPreferredTtsLanguageAsync(_currentUserId);
+            _preferredTtsLanguage = (lang ?? string.Empty).Trim().ToLowerInvariant();
+        }
+        catch
+        {
+            _preferredTtsLanguage = "";
+        }
+
+        try
+        {
+            var region = await Auth.GetPreferredTtsRegionAsync(_currentUserId);
+            _preferredTtsRegion = (region ?? string.Empty).Trim().ToUpperInvariant();
+        }
+        catch
+        {
+            _preferredTtsRegion = "";
+        }
+
+        _maxTimeoutMins = await Settings.GetMaxMoveTimeoutMinsAsync();
+
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+
+        // Check for AI mode parameters
+        if (query.TryGetValue("ai", out var aiParam) && bool.TryParse(aiParam, out var isAi))
+        {
+            _isAiMode = isAi;
+        }
+        
+        if (query.TryGetValue("aiDifficulty", out var aiDifficultyParam) && int.TryParse(aiDifficultyParam, out var aiDifficulty))
+        {
+            _aiDifficultyLevel = aiDifficulty;
+            // Set the legacy boolean for backward compatibility
+            _aiGameLevel = aiDifficulty >= 2; // Hard or Random = true
+        }
+        // Handle legacy aiLevel parameter for backward compatibility
+        else if (query.TryGetValue("aiLevel", out var legacyAiLevelParam) && bool.TryParse(legacyAiLevelParam, out var legacyAiLevel))
+        {
+            _aiGameLevel = legacyAiLevel;
+            _aiDifficultyLevel = legacyAiLevel ? 2 : 1; // Convert true=Hard, false=Moderate
+        }
+
+        if (query.TryGetValue("gameId", out var gid))
+        {
+            _gameId = gid;
+            BeginJoin(_gameId!);
+            return;
+        }
+
+        // Check for groupId parameter for new game creation
+        if (query.TryGetValue("groupId", out var gIdStr) && int.TryParse(gIdStr, out var gId))
+        {
+            _groupId = gId;
+        }
+
+        // Auto-create and navigate; navigated instance will join.
+        var creatorPlayerNumber = 1;
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("creator", out var creatorRaw))
+        {
+            if (int.TryParse(creatorRaw, out var parsed)) creatorPlayerNumber = parsed;
+        }
+
+        var adminMode = false;
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("admin", out var adminRaw))
+        {
+            adminMode = string.Equals(adminRaw.ToString(), "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(adminRaw.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (adminMode && !_isAdmin)
+        {
+            adminMode = false;
+        }
+
+        // Only create games when explicitly requested with proper parameters
+        // Don't auto-create games when accessing /Reversi directly
+        if (query.ContainsKey("ai") || query.ContainsKey("groupId") || query.ContainsKey("creator") || query.ContainsKey("admin"))
+        {
+            // Close any existing active game for this user before creating a new one
+            var existingGameId = GameService.GetActiveGameIdForUser(_currentUserId);
+            if (!string.IsNullOrWhiteSpace(existingGameId))
+            {
+                Console.WriteLine($"[ReversiGame] Found existing active game {existingGameId}, closing it before creating new game");
+                var existingGame = GameService.GetGame(existingGameId);
+                if (existingGame != null && existingGame.State != ReversiService.GameState.Finished && existingGame.State != ReversiService.GameState.Abandoned)
+                {
+                    // Set the game as finished/abandoned so a new one can be created
+                    GameService.SetGameWinner(existingGameId, 0, _currentUserId, _currentUserName); // 0 = no winner, just close it
+                    Console.WriteLine($"[ReversiGame] Closed existing game {existingGameId}");
+                }
+            }
+            
+            // Create AI game or regular game
+            if (_isAiMode)
+            {
+                _gameId = GameService.CreateGame(_currentUserId, _currentUserName, 1, false, null, true);
+                Console.WriteLine($"[ReversiGame] Created new AI game: {_gameId}");
+                // Navigate with AI parameters preserved
+                Nav.NavigateTo($"/Reversi?gameId={_gameId}&ai=true&aiDifficulty={_aiDifficultyLevel}", forceLoad: false);
+            }
+            else
+            {
+                _gameId = GameService.CreateGame(_currentUserId, _currentUserName, creatorPlayerNumber, adminMode, _groupId, false);
+                Console.WriteLine($"[ReversiGame] Created new multiplayer game: {_gameId}");
+                var urlParams = $"gameId={_gameId}";
+                if (_groupId.HasValue) urlParams += $"&groupId={_groupId}";
+                if (adminMode) urlParams += "&admin=true";
+                Nav.NavigateTo($"/Reversi?{urlParams}", forceLoad: false);
+            }
+            BeginJoin(_gameId);
+        }
+        else
+        {
+            // No valid game creation parameters - redirect to player page
+            Nav.NavigateTo("/player", forceLoad: true);
+        }
+
+        EnsureUiTimer();
+    }
+
+    private void EnsureUiTimer()
+    {
+        if (_uiTimer is not null) return;
+
+        _uiTimer = new System.Threading.Timer(_ =>
+        {
+            if (!_connected) return;
+            _ = InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private string IdleTimeoutRemainingText
+    {
+        get
+        {
+            if (_game is null) return "";
+
+            var now = DateTime.UtcNow;
+            TimeSpan remaining;
+
+            if (_game.KillAfterUtc.HasValue)
+            {
+                remaining = _game.KillAfterUtc.Value - now;
+            }
+            else
+            {
+                var max = TimeSpan.FromMinutes(Math.Max(1, _maxTimeoutMins));
+                var idle = now - _game.LastTimeUtc;
+                remaining = max - idle;
+            }
+
+            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+
+            var mins = (int)remaining.TotalMinutes;
+            return $"{mins}:{remaining.Seconds:00}";
+        }
+    }
+
+    private async void CreateGame()
+    {
+        if (_currentUserId <= 0)
+        {
+            Nav.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+        _gameId = GameService.CreateGame(_currentUserId, _currentUserName, 1, false, null, false);
+        Nav.NavigateTo($"/Reversi?gameId={_gameId}", forceLoad: false);
+        BeginJoin(_gameId);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartGame()
+    {
+        if (string.IsNullOrWhiteSpace(_gameId)) return;
+        if (_game is null) return;
+        if (_game.CreatedByUserId != _currentUserId) return;
+
+        // Start the game - this will set the game state to "Started" and begin play
+        var (ok, msg) = GameService.StartGame(_gameId);
+        if (!ok && !string.IsNullOrWhiteSpace(msg))
+        {
+            _message = msg;
+        }
+        
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void JoinById()
+    {
+        if (string.IsNullOrWhiteSpace(_joinId)) return;
+        _gameId = _joinId.Trim();
+        Nav.NavigateTo($"/Reversi?gameId={_gameId}", forceLoad: false);
+        BeginJoin(_gameId);
+    }
+
+    private void BeginJoin(string id)
+    {
+        if (_currentUserId <= 0)
+        {
+            Nav.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+        if (_joined && _connected && string.Equals(_gameId, id, StringComparison.Ordinal))
+        {
+            _game = GameService.GetGame(id);
+            _status = "";
+            RefreshLegalMoves();
+
+            GameService.GameUpdated -= OnGameUpdated;
+            GameService.GameUpdated += OnGameUpdated;
+            _message = GetConnectedMessage();
+            return;
+        }
+
+        _status = "Joining...";
+        GameService.GameUpdated -= OnGameUpdated;
+        var player = GameService.TryJoinGame(id, _currentUserId, _currentUserName);
+        if (player == -1)
+        {
+            var existing = GameService.GetActiveGameIdForUser(_currentUserId);
+            if (!string.IsNullOrWhiteSpace(existing))
+            {
+                _status = "You are already in another game. Redirecting...";
+                _connected = false;
+                _joined = false;
+                _ = InvokeAsync(StateHasChanged);
+                Nav.NavigateTo($"/Reversi?gameId={existing}", forceLoad: false);
+                return;
+            }
+
+            _status = "You are already in another game.";
+            _connected = false;
+            return;
+        }
+        if (player == 0)
+        {
+            Nav.NavigateTo("/", forceLoad: true);
+            return;
+        }
+        _playerNumber = player;
+        _game = GameService.GetGame(id);
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_gameId) && _currentUserId > 0)
+            {
+                GameService.SetPreferredTtsSettingsForUser(_gameId, _currentUserId, _preferredTtsVoiceKey, _preferredTtsLanguage, _preferredTtsRegion);
+            }
+        }
+        catch
+        {
+        }
+
+        _connected = true;
+        _joined = true;
+        _status = "";
+
+        EnsureUiTimer();
+
+        _chatDisplayStartIndex = 0;
+        _chatInText = FormatChat(_game, _chatDisplayStartIndex);
+        _lastChatCount = _game?.ChatMessages?.Count ?? 0;
+        _lastVoiceSpokenChatIndex = _lastChatCount;
+        _chatScrollPending = true;
+        RefreshLegalMoves();
+        GameService.GameUpdated += OnGameUpdated;
+        _message = GetConnectedMessage();
+        return;
+    }
+
+    private async void OnGameUpdated(string id)
+    {
+        if (id != _gameId) return;
+
+        var previousGame = _game;
+        _game = GameService.GetGame(id);
+
+        // Check if game was removed (became null)
+        if (previousGame != null && _game == null)
+        {
+            // Skip the "game closed" alert if the game ended with a proper win/loss
+            if (_gameEndedWithWinLoss)
+            {
+                // Game ended properly - no need for additional alert
+                _gameEndedWithWinLoss = false; // Reset for next game
+                return;
+            }
+        }
+
+        UpdateVoiceStatusFromGame();
+        RefreshLegalMoves();
+
+        if (_game is not null)
+        {
+            if (_lastGameState != _game.State || _lastWinnerPlayer != _game.WinnerPlayer)
+            {
+                if (_game.State == ReversiService.GameState.Finished && _lastGameState != ReversiService.GameState.Finished)
+                {
+                    _showGameOverOverlay = true;
+                    _gameOverAcknowledged = false;
+                    _message = GameResultText;
+                    // Mark that the game ended with a proper win/loss (not timeout/abandonment)
+                    _gameEndedWithWinLoss = _game.WinnerPlayer.HasValue;
+                }
+
+                _lastGameState = _game.State;
+                _lastWinnerPlayer = _game.WinnerPlayer;
+            }
+            
+            // Additional check: If game is finished and overlay not shown, show it (unless already acknowledged)
+            if (_game.State == ReversiService.GameState.Finished && !_showGameOverOverlay && !_gameOverAcknowledged)
+            {
+                _showGameOverOverlay = true;
+                _message = GameResultText;
+                _gameEndedWithWinLoss = _game.WinnerPlayer.HasValue;
+            }
+        }
+
+        if (_connected
+            && _game is not null
+            && string.IsNullOrWhiteSpace(_message)
+            && _game.State != ReversiService.GameState.Finished
+            && _game.State != ReversiService.GameState.Abandoned)
+        {
+            _message = GetConnectedMessage();
+        }
+
+        var chatCount = _game?.ChatMessages?.Count ?? 0;
+        if (chatCount != _lastChatCount)
+        {
+            var priorChatCount = _lastChatCount;
+            _lastChatCount = chatCount;
+            _chatInText = FormatChat(_game, _chatDisplayStartIndex);
+            _chatScrollPending = true;
+
+            if (_talkEnabled)
+            {
+                await QueueSpeakNewVoiceMessages(priorChatCount);
+            }
+            
+            // Capture the last system message as potential game closure reason
+            if (_game?.ChatMessages?.Count > 0)
+            {
+                var lastMsg = _game.ChatMessages[_game.ChatMessages.Count - 1];
+                if (lastMsg.SenderUserId == 0 && lastMsg.SenderName == "System")
+                {
+                    // Capture any system message that indicates game closure or timeout
+                    if (lastMsg.Text.StartsWith("Game closed:", StringComparison.OrdinalIgnoreCase) ||
+                        lastMsg.Text.Contains("exceeded", StringComparison.OrdinalIgnoreCase) ||
+                        lastMsg.Text.Contains("no second player joined", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _gameClosedReason = lastMsg.Text;
+                    }
+                }
+            }
+        }
+
+        // AI move logic for all AI modes
+        if (_isAiMode && _game is not null && (_game.State == ReversiService.GameState.Connected || _game.State == ReversiService.GameState.Playing) && _game.CurrentTurn == 2)
+        {
+            // In AI mode, Player 1 is human, Player 2 is AI
+            // If it's AI's turn, make a move based on difficulty level
+            _ = Task.Run(async () =>
+            {
+                // Add a small delay to make the AI move feel more natural
+                await Task.Delay(1000);
+                
+                var (success, message, r, c) = AiService.MakeRandomMove(_gameId!, 2, _aiDifficultyLevel);
+                
+                if (success)
+                {
+                    var difficultyText = _aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate-3-ply", 2 => "Hard", 3 => "Random", _ => "Moderate-3-ply" };
+                    _message = $"AI ({difficultyText}) placed at {r},{c}";
+                }
+                else
+                {
+                    _message = $"AI move failed: {message}";
+                }
+                
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_chatWired)
+        {
+            try
+            {
+                _dotNetRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("ReversiChat.wireEnterToSend", _chatOutRef, _dotNetRef);
+                _chatWired = true;
+            }
+            catch
+            {
+            }
+        }
+
+        if (_chatScrollPending)
+        {
+            try
+            {
+                _chatScrollPending = false;
+                await JS.InvokeVoidAsync("ReversiChat.scrollToBottom", _chatInRef);
+                await JS.InvokeVoidAsync("ReversiChat.scrollToBottom", _chatOutRef);
+            }
+            catch
+            {
+            }
+        }
+
+        if (firstRender)
+        {
+            try
+            {
+                await JS.InvokeAsync<bool>("ReversiVoice.installTtsUnlocker");
+                _voiceSupported = await JS.InvokeAsync<bool>("ReversiVoice.isSupported");
+                _voiceSupportChecked = true;
+                _talkEnabled = _voiceSupported;
+                _voiceStatus = _voiceSupported ? "Hold to talk" : "Talk not supported in this browser";
+
+                try
+                {
+                    _isPhoneClient = await JS.InvokeAsync<bool>("ReversiVoice.isProbablyPhone");
+                }
+                catch
+                {
+                    _isPhoneClient = false;
+                }
+
+                if (_isPhoneClient)
+                {
+                    _preferredTtsVoiceKey = "";
+                    _preferredTtsLanguage = "";
+                    _preferredTtsRegion = "";
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(_gameId) && _currentUserId > 0)
+                        {
+                            GameService.SetPreferredTtsSettingsForUser(_gameId, _currentUserId, null, null, null);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
+                _voiceSupported = false;
+                _voiceSupportChecked = true;
+                _voiceStatus = "Talk not supported";
+            }
+        }
+    }
+
+    private async Task CopyJoinLink()
+    {
+        if (string.IsNullOrEmpty(JoinLink)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", JoinLink);
+            _copied = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(1500);
+            _copied = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            await JS.InvokeVoidAsync("prompt", "Copy this link", JoinLink);
+        }
+    }
+
+    private async Task CancelOrExitGame()
+    {
+        if (_game is null)
+        {
+            await Task.CompletedTask;
+            return;
+        }
+
+        if (_game.State == ReversiService.GameState.Finished || _game.State == ReversiService.GameState.Abandoned)
+        {
+            // Game is finished - dispose of it properly by removing it
+            if (!string.IsNullOrWhiteSpace(_gameId))
+            {
+                Console.WriteLine($"[ReversiGame] Exiting finished game {_gameId}, removing from active games");
+                GameService.RemoveGame(_gameId);
+                Console.WriteLine($"[ReversiGame] Game {_gameId} removed");
+            }
+            
+            Nav.NavigateTo(_isAdmin ? "/admin" : "/player", forceLoad: true);
+            await Task.CompletedTask;
+            return;
+        }
+
+        // Show confirmation dialog for active games
+        _showCancelConfirm = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConfirmCancelGame()
+    {
+        _showCancelConfirm = false;
+        await CancelGame();
+    }
+
+    private void ShowConcedeConfirm()
+    {
+        _showConcedeConfirm = true;
+    }
+
+    private async Task ConfirmConcede()
+    {
+        _showConcedeConfirm = false;
+        if (string.IsNullOrWhiteSpace(_gameId) || _currentUserId <= 0) return;
+        
+        // Determine the winner (the other player)
+        var winnerPlayer = _playerNumber == 1 ? 2 : 1;
+        
+        // Set the game as finished with the other player as winner
+        var (ok, msg) = GameService.SetGameWinner(_gameId, winnerPlayer, _currentUserId, _currentUserName);
+        
+        if (!ok && !string.IsNullOrWhiteSpace(msg))
+        {
+            _message = msg;
+        }
+        
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string CancelOrExitButtonText
+    {
+        get
+        {
+            if (_game is null) return "Cancel game";
+            if (_game.State == ReversiService.GameState.Finished || _game.State == ReversiService.GameState.Abandoned)
+            {
+                return "Exit game";
+            }
+            return "Cancel game";
+        }
+    }
+
+    private async Task CancelGame()
+    {
+        if (string.IsNullOrWhiteSpace(_gameId)) return;
+        if (_game is null) return;
+        if (_game.CreatedByUserId != _currentUserId) return;
+
+        GameService.RemoveGame(_gameId);
+
+        var user = HttpContextAccessor.HttpContext?.User;
+        var isAdmin = user?.IsInRole("Admin") == true;
+        Nav.NavigateTo(isAdmin ? "/admin" : "/player", forceLoad: true);
+        await Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public async Task OnChatEnterFromJs()
+    {
+        await SendChat();
+    }
+
+    private async Task SendChat()
+    {
+        if (string.IsNullOrWhiteSpace(_gameId)) return;
+        if (_currentUserId <= 0) return;
+
+        var text = _chatOutText;
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var ok = GameService.AddChatMessage(_gameId, _currentUserId, _currentUserName, text);
+        if (ok)
+        {
+            _chatOutText = "";
+            _chatScrollPending = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnChatOutKeyUp(KeyboardEventArgs _)
+    {
+        _chatScrollPending = true;
+    }
+
+    private async Task OnChatOutKeyDown(KeyboardEventArgs e)
+    {
+        _chatScrollPending = true;
+        if (e is null) return;
+        if (!string.Equals(e.Key, "Enter", StringComparison.Ordinal)) return;
+        if (e.ShiftKey) return;
+
+        await SendChat();
+    }
+
+    private string FormatChat(Reversi.Services.ReversiGame? game)
+    {
+        return FormatChat(game, 0);
+    }
+
+    private string FormatChat(Reversi.Services.ReversiGame? game, int startIndex)
+    {
+        if (game is null) return "";
+        if (game.ChatMessages.Count == 0) return "";
+
+        if (startIndex < 0) startIndex = 0;
+        if (startIndex >= game.ChatMessages.Count) return "";
+
+        var hideVoice = _hideVoiceInChat;
+        var lines = game.ChatMessages
+            .Skip(startIndex)
+            .Where(m => !hideVoice || !m.Text.StartsWith(VoicePrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(m => $"{m.SenderName}: {m.Text ?? string.Empty}");
+
+        return string.Join("\n", lines);
+    }
+
+    private async Task ClearChatReceive()
+    {
+        _chatInText = "";
+
+        var count = _game?.ChatMessages?.Count ?? 0;
+        _chatDisplayStartIndex = count;
+        _lastChatCount = count;
+        _lastVoiceSpokenChatIndex = count;
+        _chatScrollPending = true;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task QueueSpeakNewVoiceMessages(int fromChatIndex)
+    {
+        if (!_talkEnabled) return;
+        if (_game is null) return;
+        if (_currentUserId <= 0) return;
+        if (_game.VoiceMuted) return;
+
+        if (fromChatIndex < 0) fromChatIndex = 0;
+        if (fromChatIndex < _lastVoiceSpokenChatIndex) fromChatIndex = _lastVoiceSpokenChatIndex;
+
+        var messages = _game.ChatMessages;
+        if (fromChatIndex >= messages.Count) return;
+
+        _lastVoiceSpokenChatIndex = messages.Count;
+
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await JS.InvokeAsync<bool>("ReversiVoice.unlockTts");
+            }
+            catch
+            {
+            }
+
+            for (var i = Math.Max(0, fromChatIndex); i < messages.Count; i++)
+            {
+                var m = messages[i];
+                if (m is null) continue;
+                if (m.SenderUserId == _currentUserId) continue;
+
+                var t = m.Text ?? string.Empty;
+                if (!t.StartsWith(VoicePrefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+                var payload = t.Substring(VoicePrefix.Length).Trim();
+                if (string.IsNullOrWhiteSpace(payload)) continue;
+
+                string? voiceKey = null;
+                string? voiceLanguage = null;
+                string? voiceRegion = null;
+                try
+                {
+                    voiceKey = _game?.GetPreferredTtsVoiceForUserId(m.SenderUserId);
+                    voiceLanguage = _game?.GetPreferredTtsLanguageForUserId(m.SenderUserId);
+                    voiceRegion = _game?.GetPreferredTtsRegionForUserId(m.SenderUserId);
+                }
+                catch
+                {
+                    voiceKey = null;
+                    voiceLanguage = null;
+                    voiceRegion = null;
+                }
+
+                if (!_isPhoneClient && string.IsNullOrWhiteSpace(voiceKey))
+                {
+                    try
+                    {
+                        var senderUser = await Auth.GetUserByIdAsync(m.SenderUserId);
+                        if (senderUser is not null)
+                        {
+                            voiceKey = string.IsNullOrWhiteSpace(senderUser.AdminDesktopFallbackTtsVoice)
+                                ? voiceKey
+                                : senderUser.AdminDesktopFallbackTtsVoice;
+                            voiceLanguage = string.IsNullOrWhiteSpace(senderUser.AdminDesktopFallbackTtsLanguage)
+                                ? voiceLanguage
+                                : senderUser.AdminDesktopFallbackTtsLanguage;
+                            voiceRegion = string.IsNullOrWhiteSpace(senderUser.AdminDesktopFallbackTtsRegion)
+                                ? voiceRegion
+                                : senderUser.AdminDesktopFallbackTtsRegion;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (!_talkEnabled) break;
+
+                _ttsDebug = $"msg#{i} len={payload?.Length}: {payload?.Substring(0, Math.Min(80, payload?.Length ?? 0))}";
+                await InvokeAsync(StateHasChanged);
+                // Debug: log what we're about to speak
+                await JS.InvokeVoidAsync("console.log", $"[TTS] Speaking msg #{i}, payload.Length={payload?.Length ?? 0}, payload={payload?.Substring(0, Math.Min(100, payload?.Length ?? 0))}");
+
+                try
+                {
+                    var voiceLabel = _isPhoneClient
+                        ? await JS.InvokeAsync<string>("ReversiVoice.speakDefaultAndDescribe", payload)
+                        : await JS.InvokeAsync<string>("ReversiVoice.speakAndDescribe", payload, voiceKey, voiceLanguage, voiceRegion);
+                    if (string.IsNullOrWhiteSpace(voiceLabel)) voiceLabel = "Default voice";
+
+                    await JS.InvokeVoidAsync(
+                        "console.log",
+                        $"[TTS] Received msg #{i} from user {m.SenderUserId} using voice: {voiceLabel}; phoneReceiver={_isPhoneClient}");
+
+                    var usedDefaultVoice = voiceLabel.StartsWith("Default voice", StringComparison.OrdinalIgnoreCase);
+                    string diagnosticSuffix = "";
+
+                    if (usedDefaultVoice && !_isPhoneClient)
+                    {
+                        try
+                        {
+                            var inspect = await JS.InvokeAsync<VoiceInspectResult>("ReversiVoice.inspectVoiceMatch", voiceKey, voiceLanguage, voiceRegion);
+                            if (inspect is not null)
+                            {
+                                var keyText = string.IsNullOrWhiteSpace(inspect.preferredKey) ? "(empty)" : inspect.preferredKey;
+                                var matchedText = inspect.matched
+                                    ? $"matched={inspect.matchedLabel}"
+                                    : "matched=(none)";
+                                diagnosticSuffix = $" key={keyText}; voices={inspect.voicesCount}; {matchedText}";
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    _ttsStatusVersion++;
+                    var v = _ttsStatusVersion;
+                    _ttsStatus = usedDefaultVoice
+                        ? $"Speaking: Default{diagnosticSuffix}"
+                        : $"Speaking: {voiceLabel}";
+                    await InvokeAsync(StateHasChanged);
+
+                    _ = InvokeAsync(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(20000);
+                            if (_ttsStatusVersion != v) return;
+                            _ttsStatus = "";
+                            await InvokeAsync(StateHasChanged);
+                        }
+                        catch
+                        {
+                        }
+                    });
+                }
+                catch
+                {
+                    var ok = _isPhoneClient
+                        ? await JS.InvokeAsync<bool>("ReversiVoice.speakDefault", payload)
+                        : await JS.InvokeAsync<bool>("ReversiVoice.speak", payload, voiceKey, voiceLanguage, voiceRegion);
+                    _ = ok;
+                }
+
+                try
+                {
+                    UpdateVoiceStatusFromGame();
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch
+                {
+                }
+            }
+        });
+    }
+
+    private async Task OpenJoinLinkNewWindow()
+    {
+        if (string.IsNullOrEmpty(JoinLink)) return;
+
+        // Note: This opens a separate window, but will still share the same browser profile/cookies.
+        await JS.InvokeVoidAsync(
+            "open",
+            JoinLink,
+            "_blank",
+            "noopener,noreferrer,width=1100,height=900");
+    }
+
+    private sealed class VoiceInspectResult
+    {
+        public string? preferredKey { get; set; }
+        public string? preferredLanguage { get; set; }
+        public string? preferredRegion { get; set; }
+        public int voicesCount { get; set; }
+        public bool matched { get; set; }
+        public string? matchedLabel { get; set; }
+        public List<string>? sampleVoices { get; set; }
+    }
+
+    private async Task OnCellClick(int r, int c)
+    {
+        if (!CanInteractWithBoard())
+        {
+            if (_game is not null && _game.State == ReversiService.GameState.Finished)
+            {
+                _message = GameResultText;
+            }
+            else if (_game is not null && _game.State == ReversiService.GameState.Abandoned)
+            {
+                _message = "Game was abandoned.";
+            }
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_game == null)
+        {
+            _message = "No game loaded.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_game.Board[r, c] != 0)
+        {
+            _message = $"Square ({r},{c}) is already occupied.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        (bool ok, string? msg) result;
+        if (IsAdminControllingGame())
+        {
+            result = GameService.MakeMoveAsAdmin(_gameId!, r, c);
+        }
+        else
+        {
+            if (_game.CurrentTurn != _playerNumber)
+            {
+                _message = $"Not your turn - {ColorName(_game.CurrentTurn)} to move.";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+            result = GameService.MakeMove(_gameId!, _playerNumber, r, c);
+        }
+
+        var (ok, msg) = result;
+        _message = ok ? "" : msg ?? "Invalid move";
+
+        if (ok && !string.IsNullOrWhiteSpace(_gameId))
+        {
+            _game = GameService.GetGame(_gameId);
+        }
+
+        RefreshLegalMoves();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private bool IsAdminControllingGame()
+    {
+        return _isAdmin && _game is not null && _game.AdminMode;
+    }
+
+    private void RefreshLegalMoves()
+    {
+        _legalMoves.Clear();
+        if (_game is null || string.IsNullOrWhiteSpace(_gameId)) return;
+        if (_game.State == ReversiService.GameState.Finished || _game.State == ReversiService.GameState.Abandoned) return;
+
+        // Show placement hints to the side to move (admin sees the side to move).
+        var playerToMove = _game.CurrentTurn;
+        if (!IsAdminControllingGame() && playerToMove != _playerNumber) return;
+
+        foreach (var m in GameService.ListLegalMoves(_gameId, playerToMove))
+        {
+            _legalMoves.Add((m.R, m.C));
+        }
+    }
+
+    private static string ColorName(int player)
+    {
+        return player switch
+        {
+            1 => "Black",
+            2 => "White",
+            _ => "?"
+        };
+    }
+
+    private bool CanInteractWithBoard()
+    {
+        if (!_connected) return false;
+        if (_game is null) return false;
+        if (_game.State == ReversiService.GameState.Finished || _game.State == ReversiService.GameState.Abandoned) return false;
+        if (_game.AdminMode && !_isAdmin) return false;
+        return true;
+    }
+
+    private bool IsLastMoveTo(int r, int c)
+    {
+        if (_game is null) return false;
+        if (!_game.LastMoveToR.HasValue || !_game.LastMoveToC.HasValue) return false;
+        return _game.LastMoveToR.Value == r && _game.LastMoveToC.Value == c;
+    }
+
+    private bool IsLastMoveFlipped(int r, int c)
+    {
+        if (_game is null) return false;
+        if (_game.LastMoveFlippedSquares.Count == 0) return false;
+        return _game.LastMoveFlippedSquares.Any(p => p.R == r && p.C == c);
+    }
+
+    private void DismissGameOverOverlay()
+    {
+        _showGameOverOverlay = false;
+
+        // Acknowledge the result and keep the finished board visible.
+        if (_game?.State == ReversiService.GameState.Finished)
+        {
+            _gameOverAcknowledged = true;
+        }
+    }
+
+    private void StartNewGame()
+    {
+        // Clear any existing game state
+        ClearGameState();
+        
+        // Start new game with same settings as current game
+        if (_isAiMode)
+        {
+            // Start AI game with same difficulty level
+            Nav.NavigateTo($"/Reversi?ai=true&aiDifficulty={_aiDifficultyLevel}", forceLoad: true);
+        }
+        else
+        {
+            // For multiplayer games, go to player page to select group/settings
+            Nav.NavigateTo("/player", forceLoad: true);
+        }
+    }
+
+    private void ClearGameState()
+    {
+        Console.WriteLine($"[ReversiGame] ClearGameState called - clearing game state. Current gameId: {_gameId}");
+        
+        _gameId = null;
+        _game = null;
+        _playerNumber = 0;
+        _connected = false;
+        _joined = false;
+        _status = "";
+        _message = "";
+        _legalMoves.Clear();
+        _showGameOverOverlay = false;
+        _gameOverAcknowledged = false;
+        _gameEndedWithWinLoss = false;
+        _gameClosedReason = null;
+        _lastGameState = ReversiService.GameState.New;
+        _lastWinnerPlayer = null;
+        _lastChatCount = 0;
+        _chatDisplayStartIndex = 0;
+        _chatScrollPending = false;
+        _showCancelConfirm = false;
+        _showConcedeConfirm = false;
+        
+        Console.WriteLine("[ReversiGame] Game state cleared - all variables reset");
+        
+        // Clear UI timer
+        try
+        {
+            _uiTimer?.Dispose();
+            _uiTimer = null;
+            Console.WriteLine("[ReversiGame] UI timer disposed");
+        }
+        catch
+        {
+        }
+        
+        // Unsubscribe from game updates
+        try
+        {
+            GameService.GameUpdated -= OnGameUpdated;
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnCellRightClick(MouseEventArgs e, int r, int c)
+    {
+        if (!IsAdminControllingGame()) return;
+        if (string.IsNullOrWhiteSpace(_gameId)) return;
+
+        var (ok, msg) = GameService.DeletePieceAsAdmin(_gameId!, r, c);
+        _message = ok ? "" : msg ?? "Delete failed";
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnVoiceTranscript(string text)
+    {
+        // Note: _pttHeld may already be false since JS flush is delayed after button release
+        if (string.IsNullOrWhiteSpace(_gameId)) return Task.CompletedTask;
+        if (_currentUserId <= 0) return Task.CompletedTask;
+        if (string.IsNullOrWhiteSpace(text)) return Task.CompletedTask;
+        if (_game?.VoiceMuted == true) return Task.CompletedTask;
+
+        var clean = text.Trim();
+        // Voice preference is shared via SetPreferredTtsVoiceForUser on join, no need for metadata in messages
+        GameService.AddChatMessage(_gameId, _currentUserId, _currentUserName, VoicePrefix + clean);
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnVoiceError(string error)
+    {
+        var text = (error ?? string.Empty).Trim();
+        _voiceStatus = string.IsNullOrWhiteSpace(text)
+            ? "Mic error"
+            : $"Mic error: {text}";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnVoiceEnded()
+    {
+        return Task.CompletedTask;
+    }
+
+    private async Task OnTalkPointerDown()
+    {
+        if (!_voiceSupported) return;
+        if (!_talkEnabled) return;
+        if (_pttHeld) return;
+        if (IsVoiceFloorHeldByOther) return;
+
+        _pttHeld = true;
+        _voiceStatus = "Talking…";
+
+        if (!string.IsNullOrWhiteSpace(_gameId) && _currentUserId > 0)
+        {
+            GameService.TryAcquireVoiceFloor(_gameId, _currentUserId, _currentUserName);
+        }
+
+        _voiceDotNetRef ??= DotNetObjectReference.Create(this);
+
+        try
+        {
+            await JS.InvokeAsync<bool>("ReversiVoice.start", _voiceDotNetRef);
+        }
+        catch
+        {
+        }
+
+        _voiceHoldRenewTimer?.Dispose();
+        _voiceHoldRenewTimer = new System.Threading.Timer(_ =>
+        {
+            if (!_pttHeld) return;
+            if (string.IsNullOrWhiteSpace(_gameId)) return;
+            if (_currentUserId <= 0) return;
+            GameService.TryAcquireVoiceFloor(_gameId, _currentUserId, _currentUserName);
+        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnTalkPointerUp()
+    {
+        if (!_pttHeld) return;
+        _pttHeld = false;
+
+        _voiceHoldRenewTimer?.Dispose();
+        _voiceHoldRenewTimer = null;
+
+        if (!string.IsNullOrWhiteSpace(_gameId) && _currentUserId > 0)
+        {
+            GameService.ReleaseVoiceFloor(_gameId, _currentUserId);
+        }
+
+        try
+        {
+            await JS.InvokeAsync<bool>("ReversiVoice.stop");
+        }
+        catch
+        {
+        }
+
+        UpdateVoiceStatusFromGame();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnTalkPointerCancel()
+    {
+        await OnTalkPointerUp();
+    }
+
+    private async Task OnTalkPointerLeave()
+    {
+        await OnTalkPointerUp();
+    }
+
+    public void Dispose()
+    {
+        GameService.GameUpdated -= OnGameUpdated;
+        try
+        {
+            _uiTimer?.Dispose();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            _voiceHoldRenewTimer?.Dispose();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (_pttHeld && !string.IsNullOrWhiteSpace(_gameId) && _currentUserId > 0)
+            {
+                GameService.ReleaseVoiceFloor(_gameId, _currentUserId);
+            }
+        }
+        catch
+        {
+        }
+
+        _dotNetRef?.Dispose();
+    }
+}
