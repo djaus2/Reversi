@@ -196,11 +196,11 @@ else if (!string.IsNullOrWhiteSpace(_selectedVoiceKey))
     <div style="max-width:360px;margin-bottom:12px;">
         <label style="display:flex;align-items:center;gap:8px">
             <input type="checkbox" @bind="_playFirst" />
-            I play first
+            I play first (Black)
             <br />
         </label>
         <div style="font-size:12px;opacity:0.85;">
-            Determines who plays first when you start a game
+            Determines who plays first when you start a game — Black moves first in Reversi
         </div>
     </div>
 }
@@ -583,10 +583,9 @@ else
     {
         get
         {
-            // Easy (0): Implemented
-            // Random (3): Implemented
-            // Moderate (1) and Hard (2): Not yet implemented
-            return _aiDifficultyLevel == 0 || _aiDifficultyLevel == 1 || _aiDifficultyLevel == 3;
+            // All Reversi difficulty levels are implemented:
+            // Easy (0), Moderate (1), Hard (2) and Random (3).
+            return true;
         }
     }
 

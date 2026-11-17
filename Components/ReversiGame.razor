@@ -668,10 +668,9 @@ else
     {
         get
         {
-            // Easy (0): Implemented - avoids moves that can be captured
-            // Random (3): Implemented - completely random
-            // Moderate (1) and Hard (2): Not yet implemented
-            return _aiDifficultyLevel == 0 || _aiDifficultyLevel == 3;
+            // All Reversi difficulty levels are implemented:
+            // Easy (0), Moderate (1), Hard (2) and Random (3).
+            return true;
         }
     }
 
