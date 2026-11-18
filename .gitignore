@@ -373,3 +373,4 @@ FodyWeavers.xsd
 /auth - Copy.json
 /Properties/PublishProfiles/DjsCheckersAppSvc - Web Deploy.pubxml
 /Properties/PublishProfiles/Reversi2 - Web Deploy.pubxml
+/Properties/PublishProfiles/Reversi - Web Deploy.pubxml
