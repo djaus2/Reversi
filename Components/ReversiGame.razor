@@ -33,6 +33,7 @@
   }
   .p1 { background:radial-gradient(circle at 35% 30%, #555, #111 70%); color:#fff; border:1px solid rgba(0,0,0,0.8); }
   .p2 { background:radial-gradient(circle at 35% 30%, #fff, #d9d9d9 75%); color:#000; border:1px solid #555; }
+  .ai-preview { opacity:0.85; }
 
   /* Small dot marking a legal placement for the side to move. */
   .hint-dot {
@@ -195,6 +196,7 @@
 
 <PageTitleHeading Title="Reversi Game" HeadingLevel="2" />
 
+
 @if (string.IsNullOrEmpty(_gameId))
 {
     <div>
@@ -305,6 +307,10 @@ else
                                 {
                                     var pieceClass = cell == 1 ? "p1" : "p2";
                                     <div class="piece @pieceClass"></div>
+                                }
+                                else if (IsAiPreviewCell(rr, cc))
+                                {
+                                    <div class="piece p2 ai-preview"></div>
                                 }
                                 else if (isHint)
                                 {
@@ -554,6 +560,9 @@ else
     private bool _isAiMode = false;
     private bool _aiGameLevel = false;
     private int _aiDifficultyLevel = 1; // 0=Easy, 1=Moderate, 2=Hard, 3=Random
+    private int _aiMoveDelaySeconds = 3;
+    private bool _aiMoveInProgress = false;
+    private (int R, int C)? _aiPreviewMove;
     private int _lastChatCount;
     private int _chatDisplayStartIndex;
     private int _lastVoiceSpokenChatIndex;
@@ -854,6 +863,29 @@ else
             _aiDifficultyLevel = legacyAiLevel ? 2 : 1; // Convert true=Hard, false=Moderate
         }
 
+        var aiDelayProvidedInQuery = false;
+        if (query.TryGetValue("aiDelay", out var aiDelayParam) && int.TryParse(aiDelayParam, out var aiDelay))
+        {
+            _aiMoveDelaySeconds = Math.Clamp(aiDelay, 1, 10);
+            aiDelayProvidedInQuery = true;
+        }
+
+        if (_isAiMode && !aiDelayProvidedInQuery)
+        {
+            try
+            {
+                var savedAiDelayStr = await JS.InvokeAsync<string>("localStorage.getItem", "aiMoveDelaySeconds");
+                if (!string.IsNullOrWhiteSpace(savedAiDelayStr) && int.TryParse(savedAiDelayStr, out var savedAiDelay))
+                {
+                    _aiMoveDelaySeconds = Math.Clamp(savedAiDelay, 1, 10);
+                }
+            }
+            catch
+            {
+                _aiMoveDelaySeconds = 3;
+            }
+        }
+
         if (query.TryGetValue("gameId", out var gid))
         {
             _gameId = gid;
@@ -910,7 +942,7 @@ else
                 _gameId = GameService.CreateGame(_currentUserId, _currentUserName, 1, false, null, true);
                 Console.WriteLine($"[ReversiGame] Created new AI game: {_gameId}");
                 // Navigate with AI parameters preserved
-                Nav.NavigateTo($"/Reversi?gameId={_gameId}&ai=true&aiDifficulty={_aiDifficultyLevel}", forceLoad: false);
+                Nav.NavigateTo($"/Reversi?gameId={_gameId}&ai=true&aiDifficulty={_aiDifficultyLevel}&aiDelay={_aiMoveDelaySeconds}", forceLoad: false);
             }
             else
             {
@@ -1172,27 +1204,7 @@ else
         // AI move logic for all AI modes
         if (_isAiMode && _game is not null && (_game.State == ReversiService.GameState.Connected || _game.State == ReversiService.GameState.Playing) && _game.CurrentTurn == 2)
         {
-            // In AI mode, Player 1 is human, Player 2 is AI
-            // If it's AI's turn, make a move based on difficulty level
-            _ = Task.Run(async () =>
-            {
-                // Add a small delay to make the AI move feel more natural
-                await Task.Delay(1000);
-                
-                var (success, message, r, c) = AiService.MakeRandomMove(_gameId!, 2, _aiDifficultyLevel);
-                
-                if (success)
-                {
-                    var difficultyText = _aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate", 2 => "Hard", 3 => "Random", _ => "Moderate" };
-                    _message = $"AI ({difficultyText}) placed at {r},{c}";
-                }
-                else
-                {
-                    _message = $"AI move failed: {message}";
-                }
-                
-                await InvokeAsync(StateHasChanged);
-            });
+            _ = RunAiMoveAsync();
         }
 
         await InvokeAsync(StateHasChanged);
@@ -1722,9 +1734,80 @@ else
     {
         if (!_connected) return false;
         if (_game is null) return false;
+        if (_aiMoveInProgress) return false;
         if (_game.State == ReversiService.GameState.Finished || _game.State == ReversiService.GameState.Abandoned) return false;
         if (_game.AdminMode && !_isAdmin) return false;
         return true;
+    }
+
+    private bool IsAiPreviewCell(int r, int c)
+    {
+        if (!_aiPreviewMove.HasValue) return false;
+        return _aiPreviewMove.Value.R == r && _aiPreviewMove.Value.C == c;
+    }
+
+    private bool CanRunAiMove()
+    {
+        if (!_isAiMode) return false;
+        if (_aiMoveInProgress) return false;
+        if (_game is null) return false;
+        if (string.IsNullOrWhiteSpace(_gameId)) return false;
+        if (_game.CurrentTurn != 2) return false;
+        return _game.State == ReversiService.GameState.Connected || _game.State == ReversiService.GameState.Playing;
+    }
+
+    private async Task RunAiMoveAsync()
+    {
+        if (!CanRunAiMove()) return;
+
+        _aiMoveInProgress = true;
+        try
+        {
+            var delay = TimeSpan.FromSeconds(Math.Clamp(_aiMoveDelaySeconds, 1, 10));
+
+            await Task.Delay(delay);
+
+            if (_game is null || string.IsNullOrWhiteSpace(_gameId) || _game.CurrentTurn != 2)
+            {
+                return;
+            }
+
+            var (success, message, r, c) = AiService.SelectMove(_gameId!, 2, _aiDifficultyLevel);
+            if (!success || !r.HasValue || !c.HasValue)
+            {
+                _message = $"AI move failed: {message}";
+                return;
+            }
+
+            _aiPreviewMove = (r.Value, c.Value);
+            var difficultyText = _aiDifficultyLevel switch { 0 => "Easy", 1 => "Moderate", 2 => "Hard", 3 => "Random", _ => "Moderate" };
+            _message = $"AI ({difficultyText}) placed at {r},{c}";
+            await InvokeAsync(StateHasChanged);
+
+            await Task.Delay(delay);
+
+            if (_game is null || string.IsNullOrWhiteSpace(_gameId) || _game.CurrentTurn != 2)
+            {
+                return;
+            }
+
+            var (applied, applyMessage) = GameService.MakeMove(_gameId!, 2, r.Value, c.Value);
+            if (applied)
+            {
+                _game = GameService.GetGame(_gameId!);
+                RefreshLegalMoves();
+            }
+            else
+            {
+                _message = $"AI move failed: {applyMessage}";
+            }
+        }
+        finally
+        {
+            _aiPreviewMove = null;
+            _aiMoveInProgress = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private bool IsLastMoveTo(int r, int c)
@@ -1761,7 +1844,7 @@ else
         if (_isAiMode)
         {
             // Start AI game with same difficulty level
-            Nav.NavigateTo($"/Reversi?ai=true&aiDifficulty={_aiDifficultyLevel}", forceLoad: true);
+            Nav.NavigateTo($"/Reversi?ai=true&aiDifficulty={_aiDifficultyLevel}&aiDelay={_aiMoveDelaySeconds}", forceLoad: true);
         }
         else
         {
@@ -1793,6 +1876,8 @@ else
         _chatScrollPending = false;
         _showCancelConfirm = false;
         _showConcedeConfirm = false;
+        _aiMoveInProgress = false;
+        _aiPreviewMove = null;
         
         Console.WriteLine("[ReversiGame] Game state cleared - all variables reset");
         

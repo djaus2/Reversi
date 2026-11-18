@@ -19,7 +19,7 @@ public class AiService
     }
 
     // Difficulty levels: 0=Easy, 1=Moderate, 2=Hard, 3=Random
-    public (bool success, string? message, int? r, int? c) MakeRandomMove(string gameId, int aiPlayer, int difficultyLevel = 1)
+    public (bool success, string? message, int? r, int? c) SelectMove(string gameId, int aiPlayer, int difficultyLevel = 1)
     {
         var game = _reversiService.GetGame(gameId);
         if (game == null) return (false, "Game not found", null, null);
@@ -59,13 +59,25 @@ public class AiService
             return (false, "No moves available", null, null);
         }
 
-        var (moveSuccess, moveMessage) = _reversiService.MakeMove(gameId, aiPlayer, selected.R, selected.C);
+        return (true, null, selected.R, selected.C);
+    }
+
+    // Difficulty levels: 0=Easy, 1=Moderate, 2=Hard, 3=Random
+    public (bool success, string? message, int? r, int? c) MakeRandomMove(string gameId, int aiPlayer, int difficultyLevel = 1)
+    {
+        var (selectedOk, selectedMessage, r, c) = SelectMove(gameId, aiPlayer, difficultyLevel);
+        if (!selectedOk || !r.HasValue || !c.HasValue)
+        {
+            return (false, selectedMessage ?? "No moves available", null, null);
+        }
+
+        var (moveSuccess, moveMessage) = _reversiService.MakeMove(gameId, aiPlayer, r.Value, c.Value);
 
         if (moveSuccess)
         {
             _logger.LogInformation("AI (difficulty {Difficulty}) placed disc at {R},{C}",
-                difficultyLevel, selected.R, selected.C);
-            return (true, null, selected.R, selected.C);
+                difficultyLevel, r.Value, c.Value);
+            return (true, null, r.Value, c.Value);
         }
         else
         {
