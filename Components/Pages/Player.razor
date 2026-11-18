@@ -236,19 +236,6 @@ else
             </div>
         </div>
 
-        <div style="max-width:360px;margin-bottom:12px;">
-            <label style="display:block;margin-bottom:4px;font-weight:600;">AI Response Delay (seconds)</label>
-            <input type="number"
-                   min="1"
-                   max="10"
-                   step="1"
-                   @bind="_aiMoveDelaySeconds"
-                   @bind:after="SaveAiMoveDelayPreference"
-                   style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;" />
-            <div style="font-size:12px;opacity:0.85;margin-top:4px;">
-                Delay before AI places a disc, and again before flips are shown.
-            </div>
-        </div>
     }
 }
 
@@ -607,7 +594,6 @@ else
     private bool _playFirst = true;
     private bool _playAgainstAi = false;
     private int _aiDifficultyLevel = 1; // 0=Easy, 1=Moderate, 2=Hard, 3=Random
-    private int _aiMoveDelaySeconds = 3;
 
     private Dictionary<int, string> _userNames = new();
 
@@ -1443,15 +1429,6 @@ else
                 Console.WriteLine("[Player] No Play Against AI setting saved, using default (false)");
             }
 
-            var savedAiDelayStr = await JS.InvokeAsync<string>("localStorage.getItem", "aiMoveDelaySeconds");
-            if (!string.IsNullOrWhiteSpace(savedAiDelayStr) && int.TryParse(savedAiDelayStr, out var savedAiDelay))
-            {
-                _aiMoveDelaySeconds = Math.Clamp(savedAiDelay, 1, 10);
-            }
-            else
-            {
-                _aiMoveDelaySeconds = 3;
-            }
         }
         catch (Exception ex)
         {
@@ -1459,7 +1436,6 @@ else
             // Use default if loading fails
             _aiDifficultyLevel = 1; // Moderate
             _playAgainstAi = false;
-            _aiMoveDelaySeconds = 3;
         }
     }
 
@@ -1489,28 +1465,12 @@ else
         }
     }
 
-    private async Task SaveAiMoveDelayPreference()
-    {
-        _aiMoveDelaySeconds = Math.Clamp(_aiMoveDelaySeconds, 1, 10);
-
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", "aiMoveDelaySeconds", _aiMoveDelaySeconds);
-            Console.WriteLine($"[Player] Saved AI move delay: {_aiMoveDelaySeconds}s");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Player] Error saving AI move delay: {ex.Message}");
-        }
-    }
-
     private async Task ClearAiSettings()
     {
         try
         {
             await JS.InvokeVoidAsync("localStorage.removeItem", "aiDifficultyLevel");
             await JS.InvokeVoidAsync("localStorage.removeItem", "playAgainstAi");
-            await JS.InvokeVoidAsync("localStorage.removeItem", "aiMoveDelaySeconds");
             Console.WriteLine("[Player] Cleared AI settings from localStorage");
         }
         catch
@@ -1573,8 +1533,7 @@ else
         if (_playAgainstAi)
         {
             // Start AI game - no group, always play first as human, include AI difficulty level
-            var aiDelay = Math.Clamp(_aiMoveDelaySeconds, 1, 10);
-            Nav.NavigateTo($"/Reversi?ai=true&aiDifficulty={_aiDifficultyLevel}&aiDelay={aiDelay}");
+            Nav.NavigateTo($"/Reversi?ai=true&aiDifficulty={_aiDifficultyLevel}");
         }
         else
         {

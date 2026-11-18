@@ -32,7 +32,9 @@ public static class DbSeeder
                     ReaperPeriodSeconds = 30,
                     LastMoveHighlightColor = "rgba(255,0,0,0.85)",
                     GameInitiatorGoesFirst = true,
-                    AllowPlayerPinChange = true
+                    AllowPlayerPinChange = true,
+                    AiMoveDelaySeconds = 500,
+                    AiPlayDelayMultiplier = 2
                 });
             }
         }
@@ -139,6 +141,21 @@ public static class DbSeeder
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD COLUMN \"IsLoggedIn\" INTEGER NOT NULL DEFAULT 0");
         }
 
+        if (!await ColumnExistsAsync(db, "Settings", "AiMoveDelaySeconds"))
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE \"Settings\" ADD COLUMN \"AiMoveDelaySeconds\" INTEGER NOT NULL DEFAULT 500");
+        }
+
+        if (!await ColumnExistsAsync(db, "Settings", "AiPlayDelayMultiplier"))
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE \"Settings\" ADD COLUMN \"AiPlayDelayMultiplier\" INTEGER NOT NULL DEFAULT 2");
+        }
+
+        // Legacy correction: old versions stored seconds (typically 3) before moving to milliseconds.
+        // Convert tiny values to the new default so AI and flip delays remain consistent and responsive.
+        await db.Database.ExecuteSqlRawAsync("UPDATE \"Settings\" SET \"AiMoveDelaySeconds\" = 500 WHERE \"AiMoveDelaySeconds\" < 50");
+        await db.Database.ExecuteSqlRawAsync("UPDATE \"Settings\" SET \"AiPlayDelayMultiplier\" = 2 WHERE \"AiPlayDelayMultiplier\" < 1");
+
         if (!await TableExistsAsync(db, "LoginContexts"))
         {
             await db.Database.ExecuteSqlRawAsync(@"
@@ -206,6 +223,10 @@ public static class DbSeeder
         await RequireColumn("LoginContexts", "IsActive");
         await RequireColumn("LoginContexts", "CreatedUtc");
         await RequireColumn("LoginContexts", "LastSeenUtc");
+
+        // Core settings columns used by runtime
+        await RequireColumn("Settings", "AiMoveDelaySeconds");
+        await RequireColumn("Settings", "AiPlayDelayMultiplier");
 
         if (issues.Count > 0)
         {

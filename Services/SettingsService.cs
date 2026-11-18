@@ -15,6 +15,8 @@ public sealed class SettingsService
     private string _lastMoveHighlightColor = "rgba(255,0,0,0.85)";
     private bool _gameInitiatorGoesFirst = true;
     private bool _allowPlayerPinChange = true;
+    private int _aiMoveDelaySeconds = 500;
+    private int _aiPlayDelayMultiplier = 2;
     private bool _loaded;
 
     public SettingsService(IServiceScopeFactory scopeFactory)
@@ -29,6 +31,17 @@ public sealed class SettingsService
             lock (_lock)
             {
                 return _maxMoveTimeoutMins;
+            }
+        }
+    }
+
+    public int AiPlayDelayMultiplier
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _aiPlayDelayMultiplier;
             }
         }
     }
@@ -110,6 +123,17 @@ public sealed class SettingsService
         }
     }
 
+    public int AiMoveDelaySeconds
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _aiMoveDelaySeconds;
+            }
+        }
+    }
+
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -130,6 +154,15 @@ public sealed class SettingsService
                     : s.LastMoveHighlightColor;
                 _gameInitiatorGoesFirst = s.GameInitiatorGoesFirst;
                 _allowPlayerPinChange = s.AllowPlayerPinChange;
+                var configuredDelay = s.AiMoveDelaySeconds;
+                // Legacy value correction: older builds stored "3" for seconds.
+                // In millisecond mode, treat tiny values as unset and use default 500ms.
+                if (configuredDelay < 50)
+                {
+                    configuredDelay = 500;
+                }
+                _aiMoveDelaySeconds = Math.Clamp(configuredDelay, 50, 10000);
+                _aiPlayDelayMultiplier = Math.Clamp(s.AiPlayDelayMultiplier <= 0 ? 2 : s.AiPlayDelayMultiplier, 1, 10);
                 _loaded = true;
             }
         }
@@ -145,6 +178,8 @@ public sealed class SettingsService
                 _lastMoveHighlightColor = "rgba(255,0,0,0.85)";
                 _gameInitiatorGoesFirst = true;
                 _allowPlayerPinChange = true;
+                _aiMoveDelaySeconds = 500;
+                _aiPlayDelayMultiplier = 2;
                 _loaded = true;
             }
         }
@@ -299,6 +334,44 @@ public sealed class SettingsService
         lock (_lock)
         {
             return _allowPlayerPinChange;
+        }
+    }
+
+    public async Task<int> GetAiMoveDelaySecondsAsync(CancellationToken cancellationToken = default)
+    {
+        var needLoad = false;
+        lock (_lock)
+        {
+            needLoad = !_loaded;
+        }
+
+        if (needLoad)
+        {
+            await LoadAsync(cancellationToken);
+        }
+
+        lock (_lock)
+        {
+            return _aiMoveDelaySeconds;
+        }
+    }
+
+    public async Task<int> GetAiPlayDelayMultiplierAsync(CancellationToken cancellationToken = default)
+    {
+        var needLoad = false;
+        lock (_lock)
+        {
+            needLoad = !_loaded;
+        }
+
+        if (needLoad)
+        {
+            await LoadAsync(cancellationToken);
+        }
+
+        lock (_lock)
+        {
+            return _aiPlayDelayMultiplier;
         }
     }
 
@@ -473,6 +546,8 @@ public sealed class SettingsService
                 MaxLoginHrs = 4,
                 ReaperPeriodSeconds = 30,
                 LastMoveHighlightColor = newValue
+                ,AiMoveDelaySeconds = 500
+                ,AiPlayDelayMultiplier = 2
             };
             db.Settings.Add(s);
         }
@@ -509,7 +584,9 @@ public sealed class SettingsService
                 MaxLoginHrs = 4,
                 ReaperPeriodSeconds = 30,
                 LastMoveHighlightColor = "rgba(255,0,0,0.85)",
-                GameInitiatorGoesFirst = newValue
+                GameInitiatorGoesFirst = newValue,
+                AiMoveDelaySeconds = 500,
+                AiPlayDelayMultiplier = 2
             };
             db.Settings.Add(s);
         }
@@ -547,7 +624,9 @@ public sealed class SettingsService
                 ReaperPeriodSeconds = 30,
                 LastMoveHighlightColor = "rgba(255,0,0,0.85)",
                 GameInitiatorGoesFirst = true,
-                AllowPlayerPinChange = newValue
+                AllowPlayerPinChange = newValue,
+                AiMoveDelaySeconds = 500,
+                AiPlayDelayMultiplier = 2
             };
             db.Settings.Add(s);
         }
@@ -561,6 +640,92 @@ public sealed class SettingsService
         lock (_lock)
         {
             _allowPlayerPinChange = newValue;
+            _loaded = true;
+        }
+
+        return true;
+    }
+
+    public async Task<bool> UpdateAiMoveDelaySecondsAsync(int newValue, CancellationToken cancellationToken = default)
+    {
+        if (newValue < 50) return false;
+        if (newValue > 10000) return false;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var s = await db.Settings.SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
+        if (s is null)
+        {
+            s = new AppSettings
+            {
+                Id = 1,
+                MaxMoveTimeoutMins = 5,
+                MaxGameTimeMins = 30,
+                MaxGameStartWaitTimeMins = 30,
+                MaxLoginHrs = 4,
+                ReaperPeriodSeconds = 30,
+                LastMoveHighlightColor = "rgba(255,0,0,0.85)",
+                GameInitiatorGoesFirst = true,
+                AllowPlayerPinChange = true,
+                AiMoveDelaySeconds = newValue,
+                AiPlayDelayMultiplier = 2
+            };
+            db.Settings.Add(s);
+        }
+        else
+        {
+            s.AiMoveDelaySeconds = newValue;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        lock (_lock)
+        {
+            _aiMoveDelaySeconds = newValue;
+            _loaded = true;
+        }
+
+        return true;
+    }
+
+    public async Task<bool> UpdateAiPlayDelayMultiplierAsync(int newValue, CancellationToken cancellationToken = default)
+    {
+        if (newValue < 1) return false;
+        if (newValue > 10) return false;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var s = await db.Settings.SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
+        if (s is null)
+        {
+            s = new AppSettings
+            {
+                Id = 1,
+                MaxMoveTimeoutMins = 5,
+                MaxGameTimeMins = 30,
+                MaxGameStartWaitTimeMins = 30,
+                MaxLoginHrs = 4,
+                ReaperPeriodSeconds = 30,
+                LastMoveHighlightColor = "rgba(255,0,0,0.85)",
+                GameInitiatorGoesFirst = true,
+                AllowPlayerPinChange = true,
+                AiMoveDelaySeconds = 500,
+                AiPlayDelayMultiplier = newValue
+            };
+            db.Settings.Add(s);
+        }
+        else
+        {
+            s.AiPlayDelayMultiplier = newValue;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        lock (_lock)
+        {
+            _aiPlayDelayMultiplier = newValue;
             _loaded = true;
         }
 

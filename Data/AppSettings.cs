@@ -29,4 +29,10 @@ public sealed class AppSettings
 
     [Required]
     public bool AllowPlayerPinChange { get; set; } = true;
+
+    [Required]
+    public int AiMoveDelaySeconds { get; set; } = 500;
+
+    [Required]
+    public int AiPlayDelayMultiplier { get; set; } = 2;
 }

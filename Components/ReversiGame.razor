@@ -34,6 +34,13 @@
   .p1 { background:radial-gradient(circle at 35% 30%, #555, #111 70%); color:#fff; border:1px solid rgba(0,0,0,0.8); }
   .p2 { background:radial-gradient(circle at 35% 30%, #fff, #d9d9d9 75%); color:#000; border:1px solid #555; }
   .ai-preview { opacity:0.85; }
+  .piece-flip { animation: piece-flip-anim 420ms ease-in-out; }
+
+  @@keyframes piece-flip-anim {
+    0%   { transform: rotateY(0deg) scale(1); }
+    50%  { transform: rotateY(90deg) scale(0.92); }
+    100% { transform: rotateY(180deg) scale(1); }
+  }
 
   /* Small dot marking a legal placement for the side to move. */
   .hint-dot {
@@ -290,7 +297,7 @@ else
                         var rr = r;
                         var cc = c;
 
-                        var cell = _game is not null ? _game.Board[rr, cc] : 0;
+                        var cell = GetDisplayedCell(rr, cc);
                         var isLastMoveTo = IsLastMoveTo(rr, cc);
                         var isHint = cell == 0 && _legalMoves.Contains((rr, cc));
 
@@ -306,7 +313,8 @@ else
                                 @if (cell != 0)
                                 {
                                     var pieceClass = cell == 1 ? "p1" : "p2";
-                                    <div class="piece @pieceClass"></div>
+                                    var flipClass = IsAnimatingFlipSquare(rr, cc) ? " piece-flip" : "";
+                                    <div class="@($"piece {pieceClass}{flipClass}")"></div>
                                 }
                                 else if (IsAiPreviewCell(rr, cc))
                                 {
@@ -560,9 +568,16 @@ else
     private bool _isAiMode = false;
     private bool _aiGameLevel = false;
     private int _aiDifficultyLevel = 1; // 0=Easy, 1=Moderate, 2=Hard, 3=Random
-    private int _aiMoveDelaySeconds = 3;
+    private int _aiMoveDelaySeconds = 500;
+    private int _aiPlayDelayMultiplier = 2;
     private bool _aiMoveInProgress = false;
     private (int R, int C)? _aiPreviewMove;
+    private int[,] _displayBoard = new int[8, 8];
+    private bool _displayBoardInitialized;
+    private readonly HashSet<(int R, int C)> _animatingFlipSquares = new();
+    private bool _isBoardFlipAnimationRunning;
+    private CancellationTokenSource? _flipAnimationCts;
+    private int _flipAnimationRunId;
     private int _lastChatCount;
     private int _chatDisplayStartIndex;
     private int _lastVoiceSpokenChatIndex;
@@ -840,6 +855,8 @@ else
         }
 
         _maxTimeoutMins = await Settings.GetMaxMoveTimeoutMinsAsync();
+        _aiMoveDelaySeconds = await Settings.GetAiMoveDelaySecondsAsync();
+        _aiPlayDelayMultiplier = await Settings.GetAiPlayDelayMultiplierAsync();
 
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
@@ -861,29 +878,6 @@ else
         {
             _aiGameLevel = legacyAiLevel;
             _aiDifficultyLevel = legacyAiLevel ? 2 : 1; // Convert true=Hard, false=Moderate
-        }
-
-        var aiDelayProvidedInQuery = false;
-        if (query.TryGetValue("aiDelay", out var aiDelayParam) && int.TryParse(aiDelayParam, out var aiDelay))
-        {
-            _aiMoveDelaySeconds = Math.Clamp(aiDelay, 1, 10);
-            aiDelayProvidedInQuery = true;
-        }
-
-        if (_isAiMode && !aiDelayProvidedInQuery)
-        {
-            try
-            {
-                var savedAiDelayStr = await JS.InvokeAsync<string>("localStorage.getItem", "aiMoveDelaySeconds");
-                if (!string.IsNullOrWhiteSpace(savedAiDelayStr) && int.TryParse(savedAiDelayStr, out var savedAiDelay))
-                {
-                    _aiMoveDelaySeconds = Math.Clamp(savedAiDelay, 1, 10);
-                }
-            }
-            catch
-            {
-                _aiMoveDelaySeconds = 3;
-            }
         }
 
         if (query.TryGetValue("gameId", out var gid))
@@ -942,7 +936,7 @@ else
                 _gameId = GameService.CreateGame(_currentUserId, _currentUserName, 1, false, null, true);
                 Console.WriteLine($"[ReversiGame] Created new AI game: {_gameId}");
                 // Navigate with AI parameters preserved
-                Nav.NavigateTo($"/Reversi?gameId={_gameId}&ai=true&aiDifficulty={_aiDifficultyLevel}&aiDelay={_aiMoveDelaySeconds}", forceLoad: false);
+                Nav.NavigateTo($"/Reversi?gameId={_gameId}&ai=true&aiDifficulty={_aiDifficultyLevel}", forceLoad: false);
             }
             else
             {
@@ -1049,6 +1043,7 @@ else
         if (_joined && _connected && string.Equals(_gameId, id, StringComparison.Ordinal))
         {
             _game = GameService.GetGame(id);
+            InitializeDisplayBoardFromGame();
             _status = "";
             RefreshLegalMoves();
 
@@ -1085,6 +1080,7 @@ else
         }
         _playerNumber = player;
         _game = GameService.GetGame(id);
+        InitializeDisplayBoardFromGame();
 
         try
         {
@@ -1120,6 +1116,7 @@ else
 
         var previousGame = _game;
         _game = GameService.GetGame(id);
+        ScheduleFlipAnimation();
 
         // Check if game was removed (became null)
         if (previousGame != null && _game == null)
@@ -1204,7 +1201,10 @@ else
         // AI move logic for all AI modes
         if (_isAiMode && _game is not null && (_game.State == ReversiService.GameState.Connected || _game.State == ReversiService.GameState.Playing) && _game.CurrentTurn == 2)
         {
-            _ = RunAiMoveAsync();
+            if (!_isBoardFlipAnimationRunning)
+            {
+                _ = RunAiMoveAsync();
+            }
         }
 
         await InvokeAsync(StateHasChanged);
@@ -1735,9 +1735,181 @@ else
         if (!_connected) return false;
         if (_game is null) return false;
         if (_aiMoveInProgress) return false;
+        if (_isBoardFlipAnimationRunning) return false;
         if (_game.State == ReversiService.GameState.Finished || _game.State == ReversiService.GameState.Abandoned) return false;
         if (_game.AdminMode && !_isAdmin) return false;
         return true;
+    }
+
+    private int GetDisplayedCell(int r, int c)
+    {
+        if (_displayBoardInitialized)
+        {
+            return _displayBoard[r, c];
+        }
+
+        return _game is null ? 0 : _game.Board[r, c];
+    }
+
+    private bool IsAnimatingFlipSquare(int r, int c)
+    {
+        return _animatingFlipSquares.Contains((r, c));
+    }
+
+    private void InitializeDisplayBoardFromGame()
+    {
+        if (_game is null)
+        {
+            _displayBoardInitialized = false;
+            _animatingFlipSquares.Clear();
+            return;
+        }
+
+        CopyBoard(_game.Board, _displayBoard);
+        _displayBoardInitialized = true;
+        _animatingFlipSquares.Clear();
+        _isBoardFlipAnimationRunning = false;
+    }
+
+    private void ScheduleFlipAnimation()
+    {
+        if (_game is null)
+        {
+            _displayBoardInitialized = false;
+            _animatingFlipSquares.Clear();
+            _isBoardFlipAnimationRunning = false;
+            return;
+        }
+
+        var targetBoard = CloneBoard(_game.Board);
+        var delay = TimeSpan.FromMilliseconds(Math.Clamp(_aiMoveDelaySeconds, 50, 10000));
+        var flippedSquares = _game.LastMoveFlippedSquares
+            .Select(p => (p.R, p.C))
+            .Where(p => p.R >= 0 && p.R < 8 && p.C >= 0 && p.C < 8)
+            .Distinct()
+            .ToList();
+
+        var moveTo = (_game.LastMoveToR.HasValue && _game.LastMoveToC.HasValue)
+            ? (_game.LastMoveToR.Value, _game.LastMoveToC.Value)
+            : ((int R, int C)?)null;
+
+        _flipAnimationCts?.Cancel();
+        _flipAnimationCts?.Dispose();
+        _flipAnimationCts = new CancellationTokenSource();
+        var token = _flipAnimationCts.Token;
+        var runId = ++_flipAnimationRunId;
+
+        _ = AnimateFlipsAsync(targetBoard, flippedSquares, moveTo, delay, token, runId);
+    }
+
+    private async Task AnimateFlipsAsync(
+        int[,] targetBoard,
+        List<(int R, int C)> flippedSquares,
+        (int R, int C)? moveTo,
+        TimeSpan perFlipDelay,
+        CancellationToken token,
+        int runId)
+    {
+        try
+        {
+            if (!_displayBoardInitialized)
+            {
+                CopyBoard(targetBoard, _displayBoard);
+                _displayBoardInitialized = true;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            if (moveTo.HasValue)
+            {
+                var (mr, mc) = moveTo.Value;
+                if (mr >= 0 && mr < 8 && mc >= 0 && mc < 8)
+                {
+                    _displayBoard[mr, mc] = targetBoard[mr, mc];
+                }
+            }
+
+            var sequence = flippedSquares
+                .Where(p => _displayBoard[p.R, p.C] != targetBoard[p.R, p.C])
+                .ToList();
+
+            if (sequence.Count == 0)
+            {
+                CopyBoard(targetBoard, _displayBoard);
+                _animatingFlipSquares.Clear();
+                if (runId == _flipAnimationRunId)
+                {
+                    _isBoardFlipAnimationRunning = false;
+                }
+                await InvokeAsync(StateHasChanged);
+                if (CanRunAiMove())
+                {
+                    _ = RunAiMoveAsync();
+                }
+                return;
+            }
+
+            _isBoardFlipAnimationRunning = true;
+
+            foreach (var (r, c) in sequence)
+            {
+                token.ThrowIfCancellationRequested();
+
+                _displayBoard[r, c] = targetBoard[r, c];
+                _animatingFlipSquares.Clear();
+                _animatingFlipSquares.Add((r, c));
+                await InvokeAsync(StateHasChanged);
+
+                await Task.Delay(TimeSpan.FromMilliseconds(420), token);
+
+                _animatingFlipSquares.Clear();
+                await InvokeAsync(StateHasChanged);
+
+                await Task.Delay(perFlipDelay, token);
+            }
+
+            CopyBoard(targetBoard, _displayBoard);
+            _animatingFlipSquares.Clear();
+            if (runId == _flipAnimationRunId)
+            {
+                _isBoardFlipAnimationRunning = false;
+            }
+            await InvokeAsync(StateHasChanged);
+
+            if (CanRunAiMove())
+            {
+                _ = RunAiMoveAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _animatingFlipSquares.Clear();
+            if (runId == _flipAnimationRunId)
+            {
+                _isBoardFlipAnimationRunning = false;
+            }
+        }
+    }
+
+    private static int[,] CloneBoard(int[,] source)
+    {
+        var clone = new int[8, 8];
+        CopyBoard(source, clone);
+        return clone;
+    }
+
+    private static void CopyBoard(int[,] source, int[,] destination)
+    {
+        for (var r = 0; r < 8; r++)
+        {
+            for (var c = 0; c < 8; c++)
+            {
+                destination[r, c] = source[r, c];
+            }
+        }
     }
 
     private bool IsAiPreviewCell(int r, int c)
@@ -1750,6 +1922,7 @@ else
     {
         if (!_isAiMode) return false;
         if (_aiMoveInProgress) return false;
+        if (_isBoardFlipAnimationRunning) return false;
         if (_game is null) return false;
         if (string.IsNullOrWhiteSpace(_gameId)) return false;
         if (_game.CurrentTurn != 2) return false;
@@ -1763,9 +1936,13 @@ else
         _aiMoveInProgress = true;
         try
         {
-            var delay = TimeSpan.FromSeconds(Math.Clamp(_aiMoveDelaySeconds, 1, 10));
+            var flipDelayMs = Math.Clamp(_aiMoveDelaySeconds, 50, 10000);
+            var multiplier = Math.Clamp(_aiPlayDelayMultiplier, 1, 10);
+            var aiPlayDelayMs = Math.Clamp(flipDelayMs * multiplier, 50, 60000);
+            var aiPlayDelay = TimeSpan.FromMilliseconds(aiPlayDelayMs);
+            var flipDelay = TimeSpan.FromMilliseconds(flipDelayMs);
 
-            await Task.Delay(delay);
+            await Task.Delay(aiPlayDelay);
 
             if (_game is null || string.IsNullOrWhiteSpace(_gameId) || _game.CurrentTurn != 2)
             {
@@ -1784,7 +1961,7 @@ else
             _message = $"AI ({difficultyText}) placed at {r},{c}";
             await InvokeAsync(StateHasChanged);
 
-            await Task.Delay(delay);
+            await Task.Delay(flipDelay);
 
             if (_game is null || string.IsNullOrWhiteSpace(_gameId) || _game.CurrentTurn != 2)
             {
@@ -1844,7 +2021,7 @@ else
         if (_isAiMode)
         {
             // Start AI game with same difficulty level
-            Nav.NavigateTo($"/Reversi?ai=true&aiDifficulty={_aiDifficultyLevel}&aiDelay={_aiMoveDelaySeconds}", forceLoad: true);
+            Nav.NavigateTo($"/Reversi?ai=true&aiDifficulty={_aiDifficultyLevel}", forceLoad: true);
         }
         else
         {
@@ -1878,6 +2055,20 @@ else
         _showConcedeConfirm = false;
         _aiMoveInProgress = false;
         _aiPreviewMove = null;
+        _isBoardFlipAnimationRunning = false;
+        _animatingFlipSquares.Clear();
+        _displayBoardInitialized = false;
+        _flipAnimationRunId++;
+
+        try
+        {
+            _flipAnimationCts?.Cancel();
+            _flipAnimationCts?.Dispose();
+            _flipAnimationCts = null;
+        }
+        catch
+        {
+        }
         
         Console.WriteLine("[ReversiGame] Game state cleared - all variables reset");
         
@@ -2040,6 +2231,16 @@ else
             {
                 GameService.ReleaseVoiceFloor(_gameId, _currentUserId);
             }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            _flipAnimationCts?.Cancel();
+            _flipAnimationCts?.Dispose();
+            _flipAnimationCts = null;
         }
         catch
         {

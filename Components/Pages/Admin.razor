@@ -128,6 +128,14 @@
             Reaper period (seconds)
             <input @bind="_reaperPeriodSeconds" inputmode="numeric" />
         </label>
+        <label style="display:flex;flex-direction:column;gap:4px">
+            Move/flip delay (milliseconds)
+            <input @bind="_aiMoveDelaySeconds" inputmode="numeric" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px">
+            AI play delay multiplier (x flip delay)
+            <input @bind="_aiPlayDelayMultiplier" inputmode="numeric" />
+        </label>
         <label style="display:flex;align-items:center;gap:8px">
             <input type="checkbox" @bind="_gameInitiatorGoesFirst" />
             Game Initiator goes first
@@ -373,6 +381,8 @@ else
     private int _maxGameStartWaitTimeMins = 30;  // Max time an initiated (waiting) game can wait to start
     private int _reaperPeriodSeconds = 30;       // Time between game garabage collections
     private int _maxLoginHrs = 4;                // Max time a login session is valid before requiring re-login so can't hog a game indefinitely
+    private int _aiMoveDelaySeconds = 500;
+    private int _aiPlayDelayMultiplier = 2;
     /////////////////////////////////////////////////////////////////////////
     private string _lastMoveHighlightColor = "rgba(255,0,0,0.85)";
     private bool _gameInitiatorGoesFirst = true;
@@ -482,6 +492,8 @@ else
         _maxGameStartWaitTimeMins = await Settings.GetMaxGameStartWaitTimeMinsAsync();
         _maxLoginHrs = await Settings.GetMaxLoginHrsAsync();
         _reaperPeriodSeconds = await Settings.GetReaperPeriodSecondsAsync();
+        _aiMoveDelaySeconds = await Settings.GetAiMoveDelaySecondsAsync();
+        _aiPlayDelayMultiplier = await Settings.GetAiPlayDelayMultiplierAsync();
         _lastMoveHighlightColor = await Settings.GetLastMoveHighlightColorAsync();
         _gameInitiatorGoesFirst = await Settings.GetGameInitiatorGoesFirstAsync();
         _allowPlayerPinChange = await Settings.GetAllowPlayerPinChangeAsync();
@@ -524,10 +536,12 @@ else
         var ok3 = await Settings.UpdateMaxGameStartWaitTimeMinsAsync(_maxGameStartWaitTimeMins);
         var ok4 = await Settings.UpdateMaxLoginHrsAsync(_maxLoginHrs);
         var ok5 = await Settings.UpdateReaperPeriodSecondsAsync(_reaperPeriodSeconds);
+        var ok7 = await Settings.UpdateAiMoveDelaySecondsAsync(_aiMoveDelaySeconds);
+        var ok8 = await Settings.UpdateAiPlayDelayMultiplierAsync(_aiPlayDelayMultiplier);
         var ok6 = await Settings.UpdateLastMoveHighlightColorAsync(_lastMoveHighlightColor);
         var ok9 = await Settings.UpdateGameInitiatorGoesFirstAsync(_gameInitiatorGoesFirst);
         var ok10 = await Settings.UpdateAllowPlayerPinChangeAsync(_allowPlayerPinChange);
-        _settingsMessage = (ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok9 && ok10) ? "Saved." : "Invalid value.";
+        _settingsMessage = (ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7 && ok8 && ok9 && ok10) ? "Saved." : "Invalid value.";
     }
 
     private async Task LoadAdminVoicesFromUserGesture()
