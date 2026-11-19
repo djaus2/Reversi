@@ -38,6 +38,7 @@ This folder contains progressive technical documentation for the Reversi (Othell
 - [Speech Chat Implementation](speech-chat-implementation.md)
 - [Voice Chat Hybrid Duplex Plan](voice-chat-hybrid-duplex-plan.md)
 - [Voice Chat Duplex Upgrade Plan](voice-chat-duplex-upgrade-plan.md)
+- [Publishing and Voice Button Update](publishing-and-voice-buttons-update.md)
 
 ## 6) Authentication, PIN management, and Azure deployment
 
@@ -72,6 +73,19 @@ This folder contains progressive technical documentation for the Reversi (Othell
 - [AI Player Implementation](AI-Player-Implementation.md)
 - [AI Player Plugin Plan](ai-player-plugin-plan.md)
 
-## Working notes
+## 10) Working notes
 
-- [notes/](notes/)
+<details>
+<summary>Session notes and requests (click to expand)</summary>
+
+- [Initial session notes](notes/Initial.md)
+- ["First game!" commit](notes/Initialv2.md)
+- [Commit log from V1.2.0](notes/second.md)
+- [2026-03-05 to 08: Publish game to Azure plus additional features](notes/2026-03-05-08-asession.md)
+- [2026-03-07 Requests](notes/2026-03-07-requests.md)
+- [2026-03-07 Session Notes](notes/2026-03-07-session.md)
+- [2026-03-08 Requests](notes/2026-03-08-requests.md)
+- [2026-03-08 Session Notes](notes/2026-03-08-session.md)
+- [Commit list up to edefb18](notes/commits_to_edefb18.txt)
+
+</details>
