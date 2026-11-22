@@ -62,6 +62,7 @@ Creation dates come from the git history of the original [Draughts](https://gith
 | 2026-04-04 15:57 | [AI Player Implementation](AI-Player-Implementation.md) |
 | 2026-11-06 23:25 | [Blazor Error Banner CSS Kludge](blazor-error-ui-kludge.md) |
 | 2026-11-08 19:32 | [Publishing and Voice Button Update](publishing-and-voice-buttons-update.md) |
+| 2026-11-22 14:19 | [Chess Design Thoughts](chess-design.md) |
 
 </details>
 
@@ -84,6 +85,7 @@ Creation dates come from the git history of the original [Draughts](https://gith
 | 2026-03-26 15:10 | [Azure Password Change Fix](azure-password-change-fix.md) |
 | 2026-11-06 23:25 | [Blazor Error Banner CSS Kludge](blazor-error-ui-kludge.md) |
 | 2026-03-15 21:57 | [Chat Clearing Fix](chat-clearing-fix.md) |
+| 2026-11-22 14:19 | [Chess Design Thoughts](chess-design.md) |
 | 2026-03-14 22:04 | [Commit list up to edefb18](notes/commits_to_edefb18.txt) |
 | 2026-03-14 22:04 | [Commit log from V1.2.0](notes/second.md) |
 | 2026-03-18 18:11 | [Database Export Summary](database-export-summary.md) |
@@ -207,3 +209,7 @@ Creation dates come from the git history of the original [Draughts](https://gith
 - [Commit list up to edefb18](notes/commits_to_edefb18.txt)
 
 </details>
+
+## 11) Future games
+
+- [Chess Design Thoughts](chess-design.md)
