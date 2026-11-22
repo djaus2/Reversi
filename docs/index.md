@@ -63,6 +63,7 @@ Creation dates come from the git history of the original [Draughts](https://gith
 | 2026-11-06 23:25 | [Blazor Error Banner CSS Kludge](blazor-error-ui-kludge.md) |
 | 2026-11-08 19:32 | [Publishing and Voice Button Update](publishing-and-voice-buttons-update.md) |
 | 2026-11-22 14:19 | [Chess Design Thoughts](chess-design.md) |
+| 2026-11-22 18:00 | [GameVoice library (shared voice code)](game-voice-library.md) |
 
 </details>
 
@@ -155,6 +156,7 @@ Creation dates come from the git history of the original [Draughts](https://gith
 
 ## 5) Voice / Speech
 
+- [GameVoice library (shared voice code)](game-voice-library.md)
 - [Speech Chat Implementation](speech-chat-implementation.md)
 - [Voice Chat Hybrid Duplex Plan](voice-chat-hybrid-duplex-plan.md)
 - [Voice Chat Duplex Upgrade Plan](voice-chat-duplex-upgrade-plan.md)
