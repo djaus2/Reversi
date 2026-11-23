@@ -5,7 +5,7 @@
 > **Latest:** AI as the second player! Levels: Random / Easy / Moderate / Hard (3-ply lookahead)  
 > Also added animated flipping.
 
-> **Voice:** speech recognition, TTS and the voice floor come from the shared [GameVoice](https://github.com/djaus2/GameVoice) package on GitHub Packages. Building needs a GitHub token with `read:packages`; see [docs/game-voice-library.md](docs/game-voice-library.md).
+> **Voice:** speech recognition, TTS and the voice floor come from the shared [GameVoice](https://github.com/djaus2/GameVoice) package on [nuget.org](https://www.nuget.org/packages/GameVoice); see [docs/game-voice-library.md](docs/game-voice-library.md).
 
 Try it at [https://reversi.sportronics.com.au](https://reversi.sportronics.com.au)
 
