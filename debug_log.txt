@@ -1,0 +1,3 @@
+[2026-11-23 22:09:06] LobbyChat: Refreshing 1 messages
+LobbyChat: Message - Sender: 'System', Text: 'New game started by John: 27a510ac'
+
