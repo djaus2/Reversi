@@ -3,12 +3,13 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.Logging;
+using GameVoice;
 using Reversi.Data;
 
 namespace Reversi.Services
 {
     // Simple Reversi (Othello) game service for server-side interactive components.
-    public class ReversiService
+    public class ReversiService : IVoiceRoomHost
     {
         private readonly ILogger<ReversiService> _logger;
         private readonly LobbyChatService _lobbyChat;
@@ -303,14 +304,14 @@ namespace Reversi.Services
                 var p1Name = string.IsNullOrWhiteSpace(game.Player1Name) ? $"User {p1Id}" : game.Player1Name;
                 var p2Name = string.IsNullOrWhiteSpace(game.Player2Name) ? $"User {p2Id}" : game.Player2Name;
 
-                var p1Voice = game.GetPreferredTtsVoiceForUserId(p1Id);
-                var p2Voice = game.GetPreferredTtsVoiceForUserId(p2Id);
+                var p1Voice = game.Voice.GetPreferredVoiceKey(p1Id);
+                var p2Voice = game.Voice.GetPreferredVoiceKey(p2Id);
 
                 var p1VoiceText = string.IsNullOrWhiteSpace(p1Voice) ? "(default voice)" : p1Voice;
                 var p2VoiceText = string.IsNullOrWhiteSpace(p2Voice) ? "(default voice)" : p2Voice;
 
-                game.ChatMessages.Add(new ReversiGame.ChatMessage(DateTime.UtcNow, 0, "System", $"{p1Name}: voice={p1VoiceText}"));
-                game.ChatMessages.Add(new ReversiGame.ChatMessage(DateTime.UtcNow, 0, "System", $"{p2Name}: voice={p2VoiceText}"));
+                game.ChatMessages.Add(new ChatMessage(DateTime.UtcNow, 0, "System", $"{p1Name}: voice={p1VoiceText}"));
+                game.ChatMessages.Add(new ChatMessage(DateTime.UtcNow, 0, "System", $"{p2Name}: voice={p2VoiceText}"));
                 game.VoiceInfoAnnounced = true;
                 game.Touch();
                 did = true;
@@ -383,7 +384,7 @@ namespace Reversi.Services
 
             lock (game)
             {
-                game.ChatMessages.Add(new ReversiGame.ChatMessage(DateTime.UtcNow, senderUserId, senderName ?? string.Empty, text));
+                game.ChatMessages.Add(new ChatMessage(DateTime.UtcNow, senderUserId, senderName ?? string.Empty, text));
                 game.Touch();
             }
 
@@ -471,7 +472,7 @@ namespace Reversi.Services
                 var moverName = player == 1 ? game.Player1Name : game.Player2Name;
                 var passer = string.IsNullOrWhiteSpace(passerName) ? $"Player {opponent}" : passerName;
                 var mover = string.IsNullOrWhiteSpace(moverName) ? $"Player {player}" : moverName;
-                game.ChatMessages.Add(new ReversiGame.ChatMessage(
+                game.ChatMessages.Add(new ChatMessage(
                     DateTime.UtcNow,
                     0,
                     "System",
@@ -653,7 +654,7 @@ namespace Reversi.Services
             {
                 game.GameOverMessageSent = true;
                 var text = $"Game over. Draw {game.Player1PieceCount}-{game.Player2PieceCount}.";
-                game.ChatMessages.Add(new ReversiGame.ChatMessage(DateTime.UtcNow, 0, "System", text));
+                game.ChatMessages.Add(new ChatMessage(DateTime.UtcNow, 0, "System", text));
 
                 var gameNum = int.Parse(game.Id, System.Globalization.NumberStyles.HexNumber);
                 var drawDetails = game.IsAiGame
@@ -680,7 +681,7 @@ namespace Reversi.Services
             {
                 game.GameOverMessageSent = true;
                 var text = winner == 0 ? "Game over." : $"Game over. Player {winner} wins {game.Player1PieceCount}-{game.Player2PieceCount}.";
-                game.ChatMessages.Add(new ReversiGame.ChatMessage(DateTime.UtcNow, 0, "System", text));
+                game.ChatMessages.Add(new ChatMessage(DateTime.UtcNow, 0, "System", text));
                 
                 // Log game end with winner and loser
                 var loser = winner == 1 ? 2 : (winner == 2 ? 1 : 0);
@@ -819,7 +820,7 @@ namespace Reversi.Services
                             killMsg = true;
                             game.IdleKillMessageSent = true;
                             game.KillAfterUtc = now + killGrace;
-                            game.ChatMessages.Add(new ReversiGame.ChatMessage(
+                            game.ChatMessages.Add(new ChatMessage(
                                 now,
                                 0,
                                 "System",
@@ -831,7 +832,7 @@ namespace Reversi.Services
                         warn = true;
                         game.IdleWarningSent = true;
 
-                        game.ChatMessages.Add(new ReversiGame.ChatMessage(
+                        game.ChatMessages.Add(new ChatMessage(
                             now,
                             0,
                             "System",
@@ -900,7 +901,7 @@ namespace Reversi.Services
                         shouldRemove = true;
                         
                         // Add a system message before removing
-                        game.ChatMessages.Add(new ReversiGame.ChatMessage(
+                        game.ChatMessages.Add(new ChatMessage(
                             now,
                             0,
                             "System",
@@ -911,7 +912,7 @@ namespace Reversi.Services
                         shouldWarn = true;
                         game.GameTimeWarningSent = true;
                         
-                        game.ChatMessages.Add(new ReversiGame.ChatMessage(
+                        game.ChatMessages.Add(new ChatMessage(
                             now,
                             0,
                             "System",
@@ -977,7 +978,7 @@ namespace Reversi.Services
                         shouldRemove = true;
                         
                         // Add a system message before removing
-                        game.ChatMessages.Add(new ReversiGame.ChatMessage(
+                        game.ChatMessages.Add(new ChatMessage(
                             now,
                             0,
                             "System",
@@ -992,7 +993,7 @@ namespace Reversi.Services
                         var remainingMins = Math.Max(0, (int)remaining.TotalMinutes);
                         var remainingSecs = Math.Max(0, remaining.Seconds);
                         
-                        game.ChatMessages.Add(new ReversiGame.ChatMessage(
+                        game.ChatMessages.Add(new ChatMessage(
                             now,
                             0,
                             "System",
@@ -1027,212 +1028,30 @@ namespace Reversi.Services
             return removed;
         }
 
-        public bool TryAcquireVoiceFloor(string gameId, int userId, string userName, int holdSeconds = 15)
+        public VoiceRoom? FindVoiceRoom(string roomId) => GetGame(roomId)?.Voice;
+
+        public void OnVoiceRoomChanged(string roomId, VoiceRoomChange change)
         {
-            if (string.IsNullOrWhiteSpace(gameId)) return false;
-            if (userId <= 0) return false;
-
-            var game = GetGame(gameId);
-            if (game is null) return false;
-
-            var now = DateTime.UtcNow;
-            lock (game)
-            {
-                // Expire stale locks.
-                if (game.VoiceFloorUntilUtc.HasValue && game.VoiceFloorUntilUtc.Value <= now)
-                {
-                    game.VoiceFloorUserId = null;
-                    game.VoiceFloorUserName = null;
-                    game.VoiceFloorUntilUtc = null;
-                }
-
-                // Free.
-                if (!game.VoiceFloorUserId.HasValue)
-                {
-                    game.VoiceFloorUserId = userId;
-                    game.VoiceFloorUserName = userName ?? string.Empty;
-                    game.VoiceFloorUntilUtc = now.AddSeconds(Math.Max(3, holdSeconds));
-                    game.Touch();
-                    OnGameUpdated(gameId);
-                    return true;
-                }
-
-                // Re-entrant for current holder (renew).
-                if (game.VoiceFloorUserId.Value == userId)
-                {
-                    game.VoiceFloorUserName = userName ?? string.Empty;
-                    game.VoiceFloorUntilUtc = now.AddSeconds(Math.Max(3, holdSeconds));
-                    game.Touch();
-                    OnGameUpdated(gameId);
-                    return true;
-                }
-
-                return false;
-            }
-        }
-
-        public bool ReleaseVoiceFloor(string gameId, int userId)
-        {
-            if (string.IsNullOrWhiteSpace(gameId)) return false;
-            if (userId <= 0) return false;
-
-            var game = GetGame(gameId);
-            if (game is null) return false;
+            var game = GetGame(roomId);
+            if (game is null) return;
 
             lock (game)
             {
-                if (game.VoiceFloorUserId != userId) return false;
-                game.VoiceFloorUserId = null;
-                game.VoiceFloorUserName = null;
-                game.VoiceFloorUntilUtc = null;
                 game.Touch();
             }
 
-            OnGameUpdated(gameId);
-            return true;
-        }
+            OnGameUpdated(roomId);
 
-        public bool SetPreferredTtsVoiceForUser(string gameId, int userId, string? preferredTtsVoiceKey)
-        {
-            if (string.IsNullOrWhiteSpace(gameId)) return false;
-            if (userId <= 0) return false;
-
-            var game = GetGame(gameId);
-            if (game is null) return false;
-
-            preferredTtsVoiceKey = (preferredTtsVoiceKey ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(preferredTtsVoiceKey)) preferredTtsVoiceKey = null;
-
-            lock (game)
+            if (change == VoiceRoomChange.Preferences)
             {
-                game.PreferredTtsVoiceByUserId[userId] = preferredTtsVoiceKey;
-                game.Touch();
-            }
-
-            OnGameUpdated(gameId);
-
-            try
-            {
-                TryAnnounceVoiceInfo(gameId);
-            }
-            catch
-            {
-            }
-            return true;
-        }
-
-        public bool SetPreferredTtsSettingsForUser(string gameId, int userId, string? preferredTtsVoiceKey, string? preferredTtsLanguage, string? preferredTtsRegion)
-        {
-            if (string.IsNullOrWhiteSpace(gameId)) return false;
-            if (userId <= 0) return false;
-
-            var game = GetGame(gameId);
-            if (game is null) return false;
-
-            preferredTtsVoiceKey = (preferredTtsVoiceKey ?? string.Empty).Trim();
-            preferredTtsLanguage = (preferredTtsLanguage ?? string.Empty).Trim().ToLowerInvariant();
-            preferredTtsRegion = (preferredTtsRegion ?? string.Empty).Trim().ToUpperInvariant();
-
-            if (string.IsNullOrWhiteSpace(preferredTtsVoiceKey)) preferredTtsVoiceKey = null;
-            if (string.IsNullOrWhiteSpace(preferredTtsLanguage)) preferredTtsLanguage = null;
-            if (string.IsNullOrWhiteSpace(preferredTtsRegion)) preferredTtsRegion = null;
-
-            lock (game)
-            {
-                game.PreferredTtsVoiceByUserId[userId] = preferredTtsVoiceKey;
-                game.PreferredTtsLanguageByUserId[userId] = preferredTtsLanguage;
-                game.PreferredTtsRegionByUserId[userId] = preferredTtsRegion;
-                game.Touch();
-            }
-
-            OnGameUpdated(gameId);
-
-            try
-            {
-                TryAnnounceVoiceInfo(gameId);
-            }
-            catch
-            {
-            }
-
-            return true;
-        }
-
-        public string? GetPreferredTtsVoiceForUser(string gameId, int userId)
-        {
-            if (string.IsNullOrWhiteSpace(gameId)) return null;
-            if (userId <= 0) return null;
-
-            var game = GetGame(gameId);
-            if (game is null) return null;
-
-            lock (game)
-            {
-                return game.GetPreferredTtsVoiceForUserId(userId);
-            }
-        }
-
-        public string? GetPreferredTtsLanguageForUser(string gameId, int userId)
-        {
-            if (string.IsNullOrWhiteSpace(gameId)) return null;
-            if (userId <= 0) return null;
-
-            var game = GetGame(gameId);
-            if (game is null) return null;
-
-            lock (game)
-            {
-                return game.GetPreferredTtsLanguageForUserId(userId);
-            }
-        }
-
-        public string? GetPreferredTtsRegionForUser(string gameId, int userId)
-        {
-            if (string.IsNullOrWhiteSpace(gameId)) return null;
-            if (userId <= 0) return null;
-
-            var game = GetGame(gameId);
-            if (game is null) return null;
-
-            lock (game)
-            {
-                return game.GetPreferredTtsRegionForUserId(userId);
-            }
-        }
-
-        public (bool ok, string? msg) ToggleVoiceMute(string gameId, int userId, string userName)
-        {
-            if (string.IsNullOrWhiteSpace(gameId)) return (false, "No game");
-            if (userId <= 0) return (false, "Invalid user");
-
-            var game = GetGame(gameId);
-            if (game is null) return (false, "Game not found");
-
-            lock (game)
-            {
-                if (game.VoiceMuted)
+                try
                 {
-                    // Only the user who muted can unmute
-                    if (game.VoiceMutedByUserId != userId)
-                    {
-                        return (false, $"Only {game.VoiceMutedByUserName ?? "the player who muted"} can unmute");
-                    }
-                    game.VoiceMuted = false;
-                    game.VoiceMutedByUserId = null;
-                    game.VoiceMutedByUserName = null;
-                    game.Touch();
+                    TryAnnounceVoiceInfo(roomId);
                 }
-                else
+                catch
                 {
-                    game.VoiceMuted = true;
-                    game.VoiceMutedByUserId = userId;
-                    game.VoiceMutedByUserName = userName;
-                    game.Touch();
                 }
             }
-
-            OnGameUpdated(gameId);
-            return (true, null);
         }
 
         public (bool ok, string? msg) SetGameWinner(string gameId, int winnerPlayer, int userId, string userName)
@@ -1253,7 +1072,7 @@ namespace Reversi.Services
 
                 // Add concession message to chat
                 var concessionText = $"{userName} conceded. Player {winnerPlayer} wins!";
-                game.ChatMessages.Add(new ReversiGame.ChatMessage(DateTime.UtcNow, userId, "System", concessionText));
+                game.ChatMessages.Add(new ChatMessage(DateTime.UtcNow, userId, "System", concessionText));
 
                 // Mark the game as finished with the specified winner
                 MarkFinishedWithWinner(game, winnerPlayer, "concession");
@@ -1354,23 +1173,10 @@ namespace Reversi.Services
 
         public bool VoiceInfoAnnounced { get; set; } = false;
 
-        public int? VoiceFloorUserId { get; set; }
+        /// <summary>Voice floor, mute and per-user TTS preferences (GameVoice).</summary>
+        public VoiceRoom Voice { get; } = new();
 
-        public string? VoiceFloorUserName { get; set; }
-
-        public DateTime? VoiceFloorUntilUtc { get; set; }
-
-        public Dictionary<int, string?> PreferredTtsVoiceByUserId { get; } = new();
-        public Dictionary<int, string?> PreferredTtsLanguageByUserId { get; } = new();
-        public Dictionary<int, string?> PreferredTtsRegionByUserId { get; } = new();
-
-        public bool VoiceMuted { get; set; } = false;
-        public int? VoiceMutedByUserId { get; set; }
-        public string? VoiceMutedByUserName { get; set; }
-
-        public sealed record ChatMessage(DateTime Utc, int SenderUserId, string SenderName, string Text);
-
-        public List<ChatMessage> ChatMessages { get; } = new();
+        public ChatLog ChatMessages { get; } = new();
 
         public sealed record BoardPos(int R, int C);
 
@@ -1400,23 +1206,8 @@ namespace Reversi.Services
             KillAfterUtc = null;
         }
 
-        public string? GetPreferredTtsVoiceForUserId(int userId)
-        {
-            if (userId <= 0) return null;
-            return PreferredTtsVoiceByUserId.TryGetValue(userId, out var v) ? v : null;
-        }
 
-        public string? GetPreferredTtsLanguageForUserId(int userId)
-        {
-            if (userId <= 0) return null;
-            return PreferredTtsLanguageByUserId.TryGetValue(userId, out var v) ? v : null;
-        }
 
-        public string? GetPreferredTtsRegionForUserId(int userId)
-        {
-            if (userId <= 0) return null;
-            return PreferredTtsRegionByUserId.TryGetValue(userId, out var v) ? v : null;
-        }
 
         private void InitializeBoard()
         {
@@ -1442,13 +1233,8 @@ namespace Reversi.Services
             State = ReversiService.GameState.New;
             AdminMode = false;
 
-            VoiceFloorUserId = null;
-            VoiceFloorUserName = null;
-            VoiceFloorUntilUtc = null;
-
-            PreferredTtsVoiceByUserId.Clear();
-            PreferredTtsLanguageByUserId.Clear();
-            PreferredTtsRegionByUserId.Clear();
+            Voice.ClearFloor();
+            Voice.ClearPreferences();
 
             WinnerPlayer = null;
             GameOverMessageSent = false;

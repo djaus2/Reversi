@@ -1,3 +1,4 @@
+using GameVoice;
 using Reversi.Components;
 using Reversi.Data;
 using Reversi.Services;
@@ -78,9 +79,12 @@ namespace Reversi
 
             // Register the game service so multiple components can join the same game.
             builder.Services.AddSingleton<ReversiService>();
-            builder.Services.AddSingleton<LobbyChatService>();
+            builder.Services.AddGameChat();
             builder.Services.AddSingleton<SettingsService>();
             builder.Services.AddSingleton<UsableMsVoiceService>();
+            builder.Services.AddSingleton<IVoiceCatalog>(sp => sp.GetRequiredService<UsableMsVoiceService>());
+            builder.Services.AddSingleton<IVoiceRoomHost>(sp => sp.GetRequiredService<ReversiService>());
+            builder.Services.AddGameVoice();
             builder.Services.AddSingleton<GameLogService>();
             builder.Services.AddSingleton<AiService>();
             builder.Services.AddHostedService<GameTimeoutReaper>();

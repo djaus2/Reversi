@@ -553,7 +553,7 @@ else
         {
             try
             {
-                await JS.InvokeAsync<bool>("ReversiVoice.warmupVoices");
+                await JS.InvokeAsync<bool>("GameVoice.warmupVoices");
             }
             catch
             {
@@ -565,7 +565,7 @@ else
             try
             {
                 using var diagCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                diagnostics = await JS.InvokeAsync<VoiceDiagnostics>("ReversiVoice.getVoiceDiagnostics", diagCts.Token);
+                diagnostics = await JS.InvokeAsync<VoiceDiagnostics>("GameVoice.getVoiceDiagnostics", diagCts.Token);
             }
             catch
             {
@@ -574,20 +574,20 @@ else
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(16));
-                raw = await JS.InvokeAsync<List<JsVoiceInfo>>("ReversiVoice.getVoicesAsync", cts.Token);
+                raw = await JS.InvokeAsync<List<JsVoiceInfo>>("GameVoice.getVoicesAsync", cts.Token);
             }
             catch (OperationCanceledException)
             {
                 try
                 {
-                    await JS.InvokeAsync<bool>("ReversiVoice.refreshVoices");
+                    await JS.InvokeAsync<bool>("GameVoice.refreshVoices");
                 }
                 catch
                 {
                 }
 
                 using var retryCts = new CancellationTokenSource(TimeSpan.FromSeconds(16));
-                raw = await JS.InvokeAsync<List<JsVoiceInfo>>("ReversiVoice.getVoicesAsync", retryCts.Token);
+                raw = await JS.InvokeAsync<List<JsVoiceInfo>>("GameVoice.getVoicesAsync", retryCts.Token);
             }
 
             _adminHasSpeechSynthesis = diagnostics?.hasSpeechSynthesis ?? false;
