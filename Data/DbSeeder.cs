@@ -156,6 +156,11 @@ public static class DbSeeder
         await db.Database.ExecuteSqlRawAsync("UPDATE \"Settings\" SET \"AiMoveDelaySeconds\" = 500 WHERE \"AiMoveDelaySeconds\" < 50");
         await db.Database.ExecuteSqlRawAsync("UPDATE \"Settings\" SET \"AiPlayDelayMultiplier\" = 2 WHERE \"AiPlayDelayMultiplier\" < 1");
 
+        if (!await ColumnExistsAsync(db, "Settings", "SpeechRecognitionLanguage"))
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE \"Settings\" ADD COLUMN \"SpeechRecognitionLanguage\" TEXT NULL");
+        }
+
         if (!await TableExistsAsync(db, "LoginContexts"))
         {
             await db.Database.ExecuteSqlRawAsync(@"

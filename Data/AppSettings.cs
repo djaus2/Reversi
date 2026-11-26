@@ -35,4 +35,7 @@ public sealed class AppSettings
 
     [Required]
     public int AiPlayDelayMultiplier { get; set; } = 2;
+
+    // BCP-47 speech recognition language, e.g. "en-AU"; null uses the GameVoice default (en-AU).
+    public string? SpeechRecognitionLanguage { get; set; }
 }
